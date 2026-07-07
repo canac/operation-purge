@@ -26,19 +26,10 @@ pub fn load(path: &Path) -> Result<GameData, DataError> {
     Ok(data)
 }
 
-/// Full post-load validation: the 36-entry command-table shape check
-/// (libs-map §2.4: "exactly 36 `<Object Type=\"Command\">` children") and
-/// every `*Ref` bounds check (GUARD, design §4.1).
+/// Full post-load validation: every `*Ref` bounds check (GUARD, design §4.1).
+/// (Key bindings are compiled in, not data, so there is no command-table
+/// shape check anymore.)
 pub fn validate(data: &GameData, path: &Path) -> Result<(), DataError> {
-    if data.ui.commands.len() != 36 {
-        return Err(DataError::Shape {
-            path: path.to_path_buf(),
-            message: format!(
-                "[ui].commands must have exactly 36 entries, found {}",
-                data.ui.commands.len()
-            ),
-        });
-    }
     validate_refs(data, path)
 }
 

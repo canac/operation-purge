@@ -8,7 +8,6 @@
 //! (`cOperationPurge.cpp:2600-2691`) into parsing, so there is no second
 //! conversion step and therefore no double-conversion trap (design §4.1).
 
-use crate::input::keys::Key;
 use crate::math::Rgba;
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer};
@@ -71,15 +70,6 @@ fn parse_hex_color(s: &str, with_alpha: bool) -> Result<(f32, f32, f32, f32), St
     }
 }
 
-/// `Key` = display-name string looked up in the 100-entry
-/// `input::keys::KEY_TABLE`.
-pub fn deserialize_key<'de, D>(deserializer: D) -> Result<Key, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Key::from_display_name(&s).ok_or_else(|| DeError::custom(format!("unknown key name `{s}`")))
-}
 
 /// `Ref` = the string `"None"` → `None`, else a 0-based integer index
 /// newtype. Bounds-validation against the referenced vector's length

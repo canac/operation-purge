@@ -120,9 +120,8 @@ pub struct Game {
 impl Game {
     /// Build a fresh game around an already-constructed [`World`], entering
     /// the 2D map at speed 0 (design §5.5: New Game OK → Map2D at 0.0).
-    /// Fails only if the game data's command table is malformed (GUARD).
     pub fn new(world: World) -> Result<Self, GameError> {
-        let bindings = CommandBindings::from_game_data(&world.game_data)?;
+        let bindings = CommandBindings::hardcoded();
         Ok(Self {
             world,
             screen: Screen::Map2D {

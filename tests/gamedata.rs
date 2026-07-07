@@ -21,12 +21,6 @@ fn shipped_gamedata_toml_parses_and_matches_the_golden_snapshot() {
 }
 
 #[test]
-fn shipped_gamedata_toml_has_exactly_36_commands() {
-    let data = gamedata::load(&assets_gamedata_path()).unwrap();
-    assert_eq!(data.ui.commands.len(), 36);
-}
-
-#[test]
 fn shipped_gamedata_toml_keeps_alpha_on_background_and_forces_it_opaque_elsewhere() {
     let data = gamedata::load(&assets_gamedata_path()).unwrap();
     // Background2DColor keeps alpha (design §4.1 keep-alpha list); its
@@ -128,40 +122,11 @@ fn out_of_range_ref_is_a_load_error() {
     );
 }
 
-#[test]
-fn fewer_than_36_commands_is_a_shape_error() {
-    let dir = std::env::temp_dir().join(format!(
-        "op-gamedata-shortcommands-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("short.toml");
-    std::fs::write(&path, minimal_valid_toml_with_n_commands(35)).unwrap();
-
-    let result = gamedata::load(&path);
-    std::fs::remove_dir_all(&dir).ok();
-
-    assert!(
-        matches!(result, Err(operation_purge::error::DataError::Shape { .. })),
-        "expected a Shape error for a 35-entry commands table, got {result:?}"
-    );
-}
-
 /// A minimal-but-complete `GameData.toml` (all required tables present,
 /// zero-length arrays elsewhere) used as a base for the negative tests
 /// above.
 fn minimal_valid_toml() -> String {
-    minimal_valid_toml_with_n_commands(36)
-}
-
-fn minimal_valid_toml_with_n_commands(n: usize) -> String {
-    let mut out = String::new();
-    out.push_str(
-        r#"
+    r#"
 [colors]
 background_2d = "0x60000000"
 wall_2d = "0xFF0000"
@@ -196,10 +161,6 @@ move_observer_speed2_rate = 1
 move_observer_speed3_rate = 1
 
 [center_types]
-"#,
-    );
-    for _ in 0..n {
-        out.push_str("\n[[ui.commands]]\nkey = \"A\"\ncontrol = false\nalt = false\nshift = false\n");
-    }
-    out
+"#
+    .to_string()
 }

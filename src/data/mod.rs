@@ -17,22 +17,8 @@ pub mod values;
 use crate::ids::{
     AiRobotTypeId, EffectDefId, EmitterTypeId, ParticleTypeId, ProjectileTypeId, RobotTypeId,
 };
-use crate::input::keys::Key;
 use crate::math::Rgba;
 use serde::Deserialize;
-
-/// A key binding: `tCommand { eKey Key; bool bControl, bAlt, bShift }`
-/// (libs-map §2.2). Shared by `UiOptions.commands` (indexed by
-/// `input::commands::COMMAND_ORDER`) and each `ProjectileType.fire_command`.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TCommand {
-    #[serde(deserialize_with = "values::deserialize_key")]
-    pub key: Key,
-    pub control: bool,
-    pub alt: bool,
-    pub shift: bool,
-}
 
 /// `[colors]` — `tColorsOptions`, 8 colors total (libs-map §2.2).
 #[derive(Debug, Clone, Deserialize)]
@@ -82,8 +68,9 @@ pub struct SoundsOptions {
     pub simultaneous_instances: u32,
 }
 
-/// `[ui]` — `tUIOptions`: 10 rate floats + the 36-entry command table
-/// (design §4.1; order = `input::commands::COMMAND_ORDER`).
+/// `[ui]` — `tUIOptions`: the 10 movement/rate floats. The 36-entry key
+/// binding table is compiled in (`input::commands::COMMAND_BINDINGS`), not
+/// data (user decision).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UiOptions {
@@ -97,10 +84,6 @@ pub struct UiOptions {
     pub move_observer_speed1_rate: f32,
     pub move_observer_speed2_rate: f32,
     pub move_observer_speed3_rate: f32,
-    /// Must have exactly 36 entries — validated after full load (GUARD),
-    /// not by the type system (libs-map §2.4: "exactly 36 `<Object
-    /// Type="Command">` children").
-    pub commands: Vec<TCommand>,
 }
 
 /// `tRobotGroup` (libs-map §2.2).
@@ -232,7 +215,6 @@ pub struct ProjectileType {
     pub travel_effect: Option<EffectDefId>,
     #[serde(deserialize_with = "values::deserialize_ref")]
     pub collision_effect: Option<EffectDefId>,
-    pub fire_command: TCommand,
 }
 
 /// `tTransferRate { iProjectileType, fTransferRate }` (libs-map §2.2).

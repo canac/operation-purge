@@ -33,222 +33,6 @@ move_observer_speed1_rate = 20
 move_observer_speed2_rate = 50
 move_observer_speed3_rate = 100
 
-[[ui.commands]]
-key = "F4"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Escape"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "F1"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "P"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "["
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "]"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Right"
-control = true
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Up"
-control = true
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Left"
-control = true
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Down"
-control = true
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Right"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Up"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Left"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Down"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "F2"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Left mouse button"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Left mouse button"
-control = true
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "A"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "S"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "F"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "E"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "D"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "F"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "S"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "R"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "V"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "1"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "2"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "3"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "T"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "G"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Q"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "V"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "E"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "D"
-control = false
-alt = false
-shift = false
-
-[[ui.commands]]
-key = "Space"
-control = false
-alt = false
-shift = false
-
 [[game_definitions]]
 name = "2 Teams Caleb"
 
@@ -761,7 +545,6 @@ hole_size = 0.1
 fire_effect = 0
 travel_effect = "None"
 collision_effect = 1
-fire_command = { key = "Left mouse button", control = false, alt = false, shift = false }
 
 [[projectile_types]]
 name = "Rocket"
@@ -774,7 +557,6 @@ hole_size = 0.25
 fire_effect = "None"
 travel_effect = 2
 collision_effect = 3
-fire_command = { key = "Right mouse button", control = false, alt = false, shift = false }
 
 [[projectile_types]]
 name = "Better Bullet"
@@ -787,7 +569,6 @@ hole_size = 0.15
 fire_effect = 0
 travel_effect = "None"
 collision_effect = 1
-fire_command = { key = "Left mouse button", control = false, alt = false, shift = false }
 
 [[center_types.ammo]]
 name = "Ammo center"

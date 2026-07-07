@@ -1,9 +1,10 @@
 # `GameData.toml` schema
 
-`assets/GameData.toml` is the single data-driven definition of the game:
-robot / AI / weapon tuning, teams, supply centers, particle effects, colors,
-and key bindings. It is a **one-time XML→TOML conversion** of the original
-`GameData.xml` (design §4.2) — same *field inventory* as the 2011 build, but a
+`assets/GameData.toml` is the data-driven definition of the game:
+robot / AI / weapon tuning, teams, supply centers, particle effects, and
+colors. It is a **one-time XML→TOML conversion** of the original
+`GameData.xml` (design §4.2) — same *field inventory* as the 2011 build (minus
+the asset paths and key bindings, which are now compiled in), but a
 serde-friendly, human-editable shape. The binary only ever parses TOML; it is
 **not** interchangeable with the original XML.
 
@@ -40,8 +41,7 @@ Notes:
 - A `Ref` string `"None"` becomes `Option::None`; an out-of-range index is a
   **load error** (GUARD) — refs are validated once the whole file is parsed so
   forward references resolve.
-- Unknown keys are a load error; the `[ui].commands` list must contain exactly
-  **36** entries (the fixed command ABI).
+- Unknown keys are a load error.
 
 ## Tables
 
@@ -72,21 +72,19 @@ data.
 
 ### `[ui]`
 
-Input rates plus the command→key binding table.
+Movement/input rates: `rotate_rate`, `elevate_rate`, `accelerate_rate`,
+`game_speed_rate`, `resize_building_rate`, `move_building_rate`,
+`move_observer_default_rate`, `move_observer_speed1_rate`,
+`move_observer_speed2_rate`, `move_observer_speed3_rate`.
 
-- **Rates:** `rotate_rate`, `elevate_rate`, `accelerate_rate`,
-  `game_speed_rate`, `resize_building_rate`, `move_building_rate`,
-  `move_observer_default_rate`, `move_observer_speed1_rate`,
-  `move_observer_speed2_rate`, `move_observer_speed3_rate`.
-- **`[[ui.commands]]`** — exactly **36** entries, **positional**: entry `N`
-  binds command `N` of the fixed `Command` enum ABI
-  (`src/input/commands.rs`; order matches the original
-  `cGameData::s_aszCommandsNames`). Each entry is
-  `{ key = "<display name>", control = <bool>, alt = <bool>, shift = <bool> }`.
-  Modifier matching is **not exact** (`bExactModifiers = false`): a command
-  with no required modifiers still fires when extra modifiers are held. See
-  the [README controls table](../README.md#controls) for the resolved
-  key → action mapping.
+The command→key binding table is **not** data — the 36 fixed bindings plus
+the per-projectile fire bindings are compiled in
+(`COMMAND_BINDINGS` / `FIRE_COMMANDS` in `src/input/commands.rs`, positional
+against the fixed `Command` enum ABI). Modifier matching is **not exact**
+(`bExactModifiers = false`): a command with no required modifiers still fires
+when extra modifiers are held. See the
+[README controls table](../README.md#controls) for the resolved
+key → action mapping.
 
 ### `[[game_definitions]]`
 
@@ -126,9 +124,9 @@ AI behaviour tuning: `name`, `desired_speed`, `scan_delay`, `min_wall_dist`,
 
 Weapon projectiles: `name`, `initial_speed`, `damage(+_variance)`,
 `gravity_accel`, `size`, `hole_size`, `fire_effect` / `travel_effect` /
-`collision_effect` (each a `Ref` — `"None"` allowed), and `fire_command`
-(`{ key, control, alt, shift }` inline table). (The projectile/hole
-*textures* and fire/collision *sounds* are compiled in, not data.)
+`collision_effect` (each a `Ref` — `"None"` allowed). (The projectile/hole
+*textures*, fire/collision *sounds*, and the per-projectile *fire binding*
+are all compiled in, not data.)
 
 ### `[center_types.ammo]` / `[center_types.energy]` / `[center_types.health]`
 

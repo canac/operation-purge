@@ -16,9 +16,10 @@ scattered supply centers. A match ends when one team is the last standing
 (win / lose / draw), and a game-over modal offers replay, a new game, or
 "keep watching".
 
-The maze geometry comes from `.maz` files; everything else — robot/AI/weapon
-tuning, teams, particle effects, colors, key bindings — is data-driven from a
-single `GameData.toml`.
+The maze geometry comes from `.maz` files; robot/AI/weapon tuning, teams,
+particle effects, and colors are data-driven from a single `GameData.toml`.
+Asset paths and key bindings are compiled in (`src/data/assets.rs`,
+`src/input/commands.rs`) — the game ships one fixed set of each.
 
 ## Build & run
 
@@ -68,10 +69,10 @@ into the binary (same rationale as the hardcoded `Objects`/`LightData`).
 
 ## Controls
 
-Key bindings live in the `[ui]` `commands` list of `GameData.toml` and are
-**positional** — each entry binds the command at the same index in the fixed
-command ABI (`src/input/commands.rs`). The defaults shipped in
-`assets/GameData.toml` (design §5, help-doc §1):
+Key bindings are **compiled in** (`COMMAND_BINDINGS` / `FIRE_COMMANDS` in
+`src/input/commands.rs`), transcribed from the original `GameData.xml`. They
+are positional against the fixed command ABI — the same enum order the 2011
+build bound against (design §5, help-doc §1):
 
 | Context | Action | Default key |
 |---|---|---|
