@@ -243,18 +243,6 @@ impl Key {
         self as u8
     }
 
-    pub fn from_ordinal(ordinal: u8) -> Option<Key> {
-        KEY_TABLE.get(ordinal as usize).map(|(k, _)| *k)
-    }
-
-    pub fn display_name(self) -> &'static str {
-        KEY_TABLE[self.ordinal() as usize].1
-    }
-
-    pub fn from_display_name(name: &str) -> Option<Key> {
-        KEY_TABLE.iter().find(|(_, n)| *n == name).map(|(k, _)| *k)
-    }
-
     /// The winit physical `KeyCode` this key corresponds to, or `None` for
     /// the three mouse buttons (which arrive via `MouseButton`, not the
     /// keyboard, design §5.2). PARITY: DirectInput used physical scancodes
@@ -427,15 +415,6 @@ mod tests {
     fn key_last_is_right_shift_at_ordinal_96() {
         assert_eq!(KEY_LAST, Key::ShiftRight);
         assert_eq!(KEY_LAST.ordinal(), 96);
-        assert_eq!(KEY_LAST.display_name(), "Right Shift");
-    }
-
-    #[test]
-    fn names_round_trip() {
-        for (key, name) in KEY_TABLE.iter() {
-            assert_eq!(Key::from_display_name(name), Some(*key));
-            assert_eq!(key.display_name(), *name);
-        }
     }
 
     #[test]

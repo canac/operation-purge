@@ -91,26 +91,6 @@ pub struct Plane2D {
     pub size: Vec2,
 }
 
-/// `tMovingPlane2D` (`Intersect.h:41-47`).
-#[derive(Copy, Clone, Debug)]
-pub struct MovingPlane2D {
-    pub axis: PlaneAxis,
-    pub center1: Vec2,
-    pub center2: Vec2,
-    pub size: Vec2,
-    pub stop_time: f32,
-}
-
-/// `tLine3D` (`Intersect.h:49-53`). Unused by any port site so far (dead
-/// in the original too — no caller constructs a `tLine3D`), kept only for
-/// field-inventory completeness.
-#[derive(Copy, Clone, Debug)]
-pub struct Line3D {
-    pub p1: Vec3,
-    pub p2: Vec3,
-    pub stop_time: f32,
-}
-
 /// `tPlane3D` (`Intersect.h:55-59`).
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Plane3D {
@@ -359,34 +339,6 @@ pub fn moving_rect_line(mrect: MovingRect, line: Line2D) -> Intersection2D {
     }
 }
 
-/// `Intersect::MovingPlaneLine` (`Intersect.cpp:486-513`).
-pub fn moving_plane_line(mplane: MovingPlane2D, line: Line2D) -> Intersection2D {
-    let plane = Plane2D {
-        axis: mplane.axis,
-        center: mplane.center1,
-        size: mplane.size,
-    };
-    let mut new_line = line;
-    new_line.p2.x -= mplane.center2.x - mplane.center1.x;
-    new_line.p2.y -= mplane.center2.y - mplane.center1.y;
-
-    let r = plane_line(plane, new_line);
-    if !r.hit {
-        return r;
-    }
-
-    if r.time <= mplane.stop_time {
-        r
-    } else {
-        let plane2 = Plane2D {
-            axis: mplane.axis,
-            center: mplane.center2,
-            size: mplane.size,
-        };
-        plane_line(plane2, line)
-    }
-}
-
 /// `Intersect::RectRect` (`Intersect.cpp:154-160`).
 pub fn rect_rect(rect1: Rect, rect2: Rect) -> bool {
     let big = Rect {
@@ -394,15 +346,6 @@ pub fn rect_rect(rect1: Rect, rect2: Rect) -> bool {
         size: rect1.size + rect2.size,
     };
     point_rect(rect2.center, big)
-}
-
-/// `Intersect::RectPlane` (`Intersect.cpp:162-168`).
-pub fn rect_plane(rect: Rect, plane: Plane2D) -> bool {
-    let big = Rect {
-        center: plane.center,
-        size: plane.size + rect.size,
-    };
-    point_rect(rect.center, big)
 }
 
 /// `Intersect::MovingRectRect` (`Intersect.cpp:84-117`).
@@ -425,36 +368,6 @@ pub fn moving_rect_rect(mrect: MovingRect, rect: Rect) -> Intersection2D {
     if r.time <= mrect.stop_time {
         r
     } else if point_rect(mrect.center2, big) {
-        Intersection2D {
-            hit: true,
-            time: mrect.stop_time,
-            ..no_intersection_2d()
-        }
-    } else {
-        no_intersection_2d()
-    }
-}
-
-/// `Intersect::MovingRectPlane` (`Intersect.cpp:119-152`).
-pub fn moving_rect_plane(mrect: MovingRect, plane: Plane2D) -> Intersection2D {
-    let rect = Rect {
-        center: plane.center,
-        size: plane.size + mrect.size,
-    };
-    let line = Line2D {
-        p1: mrect.center1,
-        p2: mrect.center2,
-        stop_time: mrect.stop_time,
-    };
-
-    let r = rect_line(rect, line);
-    if !r.hit {
-        return r;
-    }
-
-    if r.time <= mrect.stop_time {
-        r
-    } else if point_rect(mrect.center2, rect) {
         Intersection2D {
             hit: true,
             time: mrect.stop_time,

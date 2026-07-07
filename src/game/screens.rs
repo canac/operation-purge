@@ -7,8 +7,6 @@
 //! the port replaces every such site with a non-blocking `Confirm` screen
 //! (the sim is frozen and sounds are stopped **first**, ordering preserved).
 
-use super::newgame::NewGame;
-
 /// Which field has focus in the New Game screen's text entry.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Field {
@@ -128,9 +126,12 @@ impl ConfirmKind {
 /// password **enables** cheats (`cMainWindow.cpp:760-761`); 2D-map arrow
 /// pan is inverted (down = Up); Cancel at startup exits, Cancel mid-game
 /// resumes.
+///
+/// PARITY note: the live New Game screen is driven by `AppRunner.new_game:
+/// Option<NewGame>` (app/mod.rs), *not* a `Screen` variant — so `Screen` has
+/// no `NewGame` case.
 #[derive(Clone)]
 pub enum Screen {
-    NewGame(NewGame),
     Map2D { forced_by_death: bool },
     Play3D,
     /// The free observer-point camera (`observerPoint`, design §5.5).
@@ -138,13 +139,6 @@ pub enum Screen {
     Confirm {
         kind: ConfirmKind,
     },
-}
-
-impl Screen {
-    /// The New Game screen shown at launch (no game running yet).
-    pub fn new_game_at_startup(pattern: String, game_idx: u32, team_idx: u32) -> Self {
-        Screen::NewGame(NewGame::new(pattern, game_idx, team_idx, false))
-    }
 }
 
 #[cfg(test)]

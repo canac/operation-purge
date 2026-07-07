@@ -74,24 +74,6 @@ impl App {
     }
 }
 
-/// Compose a command's binding into a human-readable "Ctrl+Shift+F" style
-/// string using the verbatim key display names (design §5.2). Pure — unit
-/// tested without a window.
-pub fn describe_binding(binding: &crate::input::commands::CommandBinding) -> String {
-    let mut s = String::new();
-    if binding.control {
-        s.push_str("Ctrl+");
-    }
-    if binding.alt {
-        s.push_str("Alt+");
-    }
-    if binding.shift {
-        s.push_str("Shift+");
-    }
-    s.push_str(binding.key.display_name());
-    s
-}
-
 /// The winit `ApplicationHandler` that drives the M8 playable loop.
 pub struct AppRunner {
     config: Config,
@@ -1032,24 +1014,5 @@ mod tests {
     fn first_frame_dt_is_zero_not_a_giant_spike() {
         let mut app = App::new(config::Config::default());
         assert_eq!(app.next_dt(), 0.0);
-    }
-
-    #[test]
-    fn describe_binding_prefixes_modifiers_in_ctrl_alt_shift_order() {
-        use crate::input::commands::CommandBinding;
-        let b = CommandBinding {
-            key: Key::KeyF,
-            control: true,
-            alt: false,
-            shift: true,
-        };
-        assert_eq!(describe_binding(&b), "Ctrl+Shift+F");
-        let plain = CommandBinding {
-            key: Key::Space,
-            control: false,
-            alt: false,
-            shift: false,
-        };
-        assert_eq!(describe_binding(&plain), "Space");
     }
 }
