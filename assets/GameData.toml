@@ -1,0 +1,1127 @@
+[colors]
+background_2d = "0x60004000"
+wall_2d = "0xFF0000"
+barrel_2d = "0x808080"
+observer_2d = "0xFFFFFF"
+crosshair_2d = "0x808000"
+status_text_2d = "0xFFFFFF"
+barrel_3d = "0x808080"
+tread_3d = "0x404040"
+
+[building]
+wall_width = 1
+room_size = 10
+ceiling_height = 5
+wall_texture = "Brick.bmp"
+wall_texture_size = 1
+floor_texture = "Steel.bmp"
+floor_texture_size = 0.1
+ceiling_texture = "Ceiling.bmp"
+ceiling_texture_size = 1
+
+[sounds]
+enemy_visible_sound = "FastAlarm.wav"
+targeted_sound = "Alarm.wav"
+simultaneous_instances = 10
+
+[ui]
+rotate_rate = 2000
+elevate_rate = 500
+accelerate_rate = 1
+game_speed_rate = 0.3
+resize_building_rate = 10
+move_building_rate = 10
+move_observer_default_rate = 10
+move_observer_speed1_rate = 20
+move_observer_speed2_rate = 50
+move_observer_speed3_rate = 100
+
+[[ui.commands]]
+key = "F4"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Escape"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "F1"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "P"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "["
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "]"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Right"
+control = true
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Up"
+control = true
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Left"
+control = true
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Down"
+control = true
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Right"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Up"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Left"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Down"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "F2"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Left mouse button"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Left mouse button"
+control = true
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "A"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "S"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "F"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "E"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "D"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "F"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "S"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "R"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "V"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "1"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "2"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "3"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "T"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "G"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Q"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "V"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "E"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "D"
+control = false
+alt = false
+shift = false
+
+[[ui.commands]]
+key = "Space"
+control = false
+alt = false
+shift = false
+
+[[game_definitions]]
+name = "2 Teams Caleb"
+
+[[game_definitions.teams]]
+name = "Good guys"
+color = "0xFF0000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 4
+ai_robot_type = 1
+count = 1
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Bad guys"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 25
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.ammo_center_groups]]
+center_type = 0
+count = 10
+
+[[game_definitions.energy_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.health_center_groups]]
+center_type = 0
+count = 10
+
+[[game_definitions]]
+name = "7 Teams Ethan"
+
+[[game_definitions.teams]]
+name = "Good guys"
+color = "0xFF0000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 1
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 1"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 3
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 2"
+color = "0x0000FF"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 3
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 3"
+color = "0xFF8000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 3
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 4"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 3
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 5"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 3
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 6"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 3
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.ammo_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.energy_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.health_center_groups]]
+center_type = 0
+count = 2
+
+[[game_definitions]]
+name = "Training 1"
+
+[[game_definitions.teams]]
+name = "Good guys"
+color = "0xFF0000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 1
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 1"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 10
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 2"
+color = "0x0000FF"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 10
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.ammo_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.energy_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.health_center_groups]]
+center_type = 0
+count = 2
+
+[[game_definitions]]
+name = "Training 2"
+
+[[game_definitions.teams]]
+name = "Good guys"
+color = "0xFF0000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 1
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 1"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 10
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 2"
+color = "0x0000FF"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 10
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.ammo_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.energy_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.health_center_groups]]
+center_type = 0
+count = 2
+
+[[game_definitions]]
+name = "Training 3"
+
+[[game_definitions.teams]]
+name = "Good guys"
+color = "0xFF0000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 1
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 1"
+color = "0x00FF00"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 10
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy 2"
+color = "0x0000FF"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 10
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.ammo_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.energy_center_groups]]
+center_type = 0
+count = 5
+
+[[game_definitions.health_center_groups]]
+center_type = 0
+count = 2
+
+[[game_definitions]]
+name = "Test"
+
+[[game_definitions.teams]]
+name = "Good guys"
+color = "0xFF0000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 1
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions.teams]]
+name = "Enemy"
+color = "0x0000FF"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 0
+ai_robot_type = 0
+count = 1
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0
+spawn_delay_variance = 0
+spawn_from_point = false
+
+[[game_definitions]]
+name = "Target Practice"
+
+[[game_definitions.teams]]
+name = "Targets"
+color = "0xFF0000"
+
+[[game_definitions.teams.robot_groups]]
+robot_type = 3
+ai_robot_type = 0
+count = 20
+initial_delay = 0
+initial_delay_variance = 0
+spawn_delay = 0.1
+spawn_delay_variance = 0.1
+spawn_from_point = false
+
+[[robot_types]]
+name = "Robot"
+accel = 5
+brake_decel = 25
+friction_decel = 1
+max_speed = 100
+rotate_rate = 720
+max_visible_dist = 50
+energy_start = 1000
+health_start = 5
+projectile_armor = 1
+crash_armor = 25
+destroy_sound = "Destroy.wav"
+destroy_effect = 4
+
+[[robot_types.projectile_data]]
+projectile_type = 0
+count = 500
+fire_rate = 0.2
+accuracy = 3
+
+[[robot_types.projectile_data]]
+projectile_type = 1
+count = 250
+fire_rate = 1
+accuracy = 5
+
+[[robot_types]]
+name = "Accurate Robot"
+accel = 5
+brake_decel = 25
+friction_decel = 1
+max_speed = 100
+rotate_rate = 720
+max_visible_dist = 50
+energy_start = 1000
+health_start = 5
+projectile_armor = 1
+crash_armor = 25
+destroy_sound = "Destroy.wav"
+destroy_effect = 4
+
+[[robot_types.projectile_data]]
+projectile_type = 0
+count = 500
+fire_rate = 0.2
+accuracy = 0
+
+[[robot_types.projectile_data]]
+projectile_type = 1
+count = 250
+fire_rate = 1
+accuracy = 0
+
+[[robot_types]]
+name = "No Ammo Robot"
+accel = 5
+brake_decel = 25
+friction_decel = 1
+max_speed = 100
+rotate_rate = 720
+max_visible_dist = 50
+energy_start = 1000
+health_start = 5
+projectile_armor = 1
+crash_armor = 25
+destroy_sound = "Destroy.wav"
+destroy_effect = 4
+
+[[robot_types]]
+name = "Motionless Robot"
+accel = 0
+brake_decel = 0
+friction_decel = 0
+max_speed = 0
+rotate_rate = 0
+max_visible_dist = 50
+energy_start = 0
+health_start = 5
+projectile_armor = 1
+crash_armor = 1
+destroy_sound = "Destroy.wav"
+destroy_effect = 4
+
+[[robot_types]]
+name = "Machine Gunner"
+accel = 15
+brake_decel = 100
+friction_decel = 1
+max_speed = 100
+rotate_rate = 720
+max_visible_dist = 50
+energy_start = 1000
+health_start = 50
+projectile_armor = 5
+crash_armor = 25
+destroy_sound = "Destroy.wav"
+destroy_effect = 4
+
+[[robot_types.projectile_data]]
+projectile_type = 2
+count = 250
+fire_rate = 0.03
+accuracy = 0
+
+[[ai_robot_types]]
+name = "AI Robot"
+desired_speed = 25
+scan_delay = 0
+min_wall_dist = 3
+obstacle_impulse = 1
+desired_ammo = 0.7
+desired_energy = 0.5
+desired_health = 0.9
+critical_ammo = 0.2
+critical_energy = 0.25
+critical_health = 0.5
+
+[[ai_robot_types]]
+name = "AI Machine Gunner"
+desired_speed = 100
+scan_delay = 0
+min_wall_dist = 3
+obstacle_impulse = 1
+desired_ammo = 0.25
+desired_energy = 0.3
+desired_health = 0.75
+critical_ammo = 0.25
+critical_energy = 0.2
+critical_health = 0.2
+
+[[projectile_types]]
+name = "Bullet"
+initial_speed = 100
+damage = 1
+damage_variance = 0
+gravity_accel = 10
+size = 0.05
+hole_size = 0.1
+texture = "Projectile.png"
+hole_texture = "Hole.png"
+fire_sound = "BulletFire.wav"
+collision_sound = "BulletCollision.wav"
+fire_effect = 0
+travel_effect = "None"
+collision_effect = 1
+fire_command = { key = "Left mouse button", control = false, alt = false, shift = false }
+
+[[projectile_types]]
+name = "Rocket"
+initial_speed = 250
+damage = 5
+damage_variance = 0
+gravity_accel = 10
+size = 0.1
+hole_size = 0.25
+texture = ""
+hole_texture = "Hole.png"
+fire_sound = "RocketFire.wav"
+collision_sound = "RocketCollision.wav"
+fire_effect = "None"
+travel_effect = 2
+collision_effect = 3
+fire_command = { key = "Right mouse button", control = false, alt = false, shift = false }
+
+[[projectile_types]]
+name = "Better Bullet"
+initial_speed = 1000
+damage = 1
+damage_variance = 0
+gravity_accel = 0
+size = 0.05
+hole_size = 0.15
+texture = "Projectile.png"
+hole_texture = "Hole.png"
+fire_sound = "BulletFire.wav"
+collision_sound = "BulletCollision.wav"
+fire_effect = 0
+travel_effect = "None"
+collision_effect = 1
+fire_command = { key = "Left mouse button", control = false, alt = false, shift = false }
+
+[[center_types.ammo]]
+name = "Ammo center"
+size = 5
+color = "0x60800000"
+
+[[center_types.ammo.transfer_rates]]
+projectile_type = 0
+transfer_rate = 0.1
+
+[[center_types.ammo.transfer_rates]]
+projectile_type = 1
+transfer_rate = 0.25
+
+[[center_types.ammo.transfer_rates]]
+projectile_type = 2
+transfer_rate = 0.1
+
+[[center_types.energy]]
+name = "Energy center"
+size = 5
+color = "0x60008000"
+transfer_rate = 0.1
+
+[[center_types.health]]
+name = "Health center"
+size = 5
+color = "0x60000080"
+transfer_rate = 0.1
+
+[[particle_types]]
+name = "Bullet fire"
+texture_file = "Smoke.png"
+lifetime = 0.1
+lifetime_variance = 0.03
+inherited_velocity_factor = 0
+rise_speed = 0.5
+rise_acceleration = 0
+initial_rotation = 0
+initial_rotation_variance = 180
+rotation_rate = 0
+rotation_rate_variance = 1000
+
+[[particle_types.stages]]
+color = "0xC0606060"
+size = 0.1
+time = 0
+
+[[particle_types.stages]]
+color = "0x00808080"
+size = 0.1
+time = 1
+
+[[particle_types]]
+name = "Bullet collision"
+texture_file = "Smoke.png"
+lifetime = 0.1
+lifetime_variance = 0.03
+inherited_velocity_factor = 0
+rise_speed = 0.5
+rise_acceleration = 0
+initial_rotation = 0
+initial_rotation_variance = 180
+rotation_rate = 0
+rotation_rate_variance = 1000
+
+[[particle_types.stages]]
+color = "0xC0606060"
+size = 0.1
+time = 0
+
+[[particle_types.stages]]
+color = "0x00808080"
+size = 0.1
+time = 1
+
+[[particle_types]]
+name = "Rocket travel flame"
+texture_file = "Smoke.png"
+lifetime = 0.005
+lifetime_variance = 0.002
+inherited_velocity_factor = 0
+rise_speed = 1
+rise_acceleration = 0
+initial_rotation = 0
+initial_rotation_variance = 180
+rotation_rate = 0
+rotation_rate_variance = 100
+
+[[particle_types.stages]]
+color = "0xFFFF0000"
+size = 0.1
+time = 0
+
+[[particle_types.stages]]
+color = "0x40FF8000"
+size = 0.25
+time = 0.25
+
+[[particle_types.stages]]
+color = "0x00FFFF00"
+size = 0.5
+time = 1
+
+[[particle_types]]
+name = "Rocket collision"
+texture_file = "Smoke.png"
+lifetime = 0.2
+lifetime_variance = 0.1
+inherited_velocity_factor = 0
+rise_speed = 0
+rise_acceleration = 0
+initial_rotation = 0
+initial_rotation_variance = 180
+rotation_rate = 0
+rotation_rate_variance = 100
+
+[[particle_types.stages]]
+color = "0xFFFF0000"
+size = 0.1
+time = 0
+
+[[particle_types.stages]]
+color = "0x40FF8000"
+size = 0.25
+time = 0.25
+
+[[particle_types.stages]]
+color = "0x00FFFF00"
+size = 0.5
+time = 1
+
+[[particle_types]]
+name = "Robot destroy fireball"
+texture_file = "Smoke.png"
+lifetime = 0.2
+lifetime_variance = 0.1
+inherited_velocity_factor = 0
+rise_speed = 0
+rise_acceleration = 0
+initial_rotation = 0
+initial_rotation_variance = 180
+rotation_rate = 0
+rotation_rate_variance = 100
+
+[[particle_types.stages]]
+color = "0xFFFF0000"
+size = 0.1
+time = 0
+
+[[particle_types.stages]]
+color = "0x40FF8000"
+size = 0.25
+time = 0.25
+
+[[particle_types.stages]]
+color = "0x00FFFF00"
+size = 0.5
+time = 1
+
+[[particle_types]]
+name = "Robot destroy debris"
+texture_file = "Smoke.png"
+lifetime = 0.5
+lifetime_variance = 0.2
+inherited_velocity_factor = 0
+rise_speed = 0
+rise_acceleration = -25
+initial_rotation = 0
+initial_rotation_variance = 180
+rotation_rate = 0
+rotation_rate_variance = 1000
+
+[[particle_types.stages]]
+color = "0xFF000000"
+size = 0.1
+time = 0
+
+[[particle_types.stages]]
+color = "0x40000000"
+size = 0.1
+time = 0.75
+
+[[particle_types.stages]]
+color = "0x00000000"
+size = 0.1
+time = 1
+
+[[particle_emitter_types]]
+name = "Bullet fire"
+lifetime = 0.075
+lifetime_variance = 0.025
+emit_by_distance = false
+emit_rate = 0.005
+emit_rate_variance = 0.003
+emit_relative = true
+emit_theta_min = 0
+emit_theta_max = 360
+emit_phi_min = 60
+emit_phi_max = 90
+emit_velocity = 3
+emit_velocity_variance = 1
+
+[[particle_emitter_types]]
+name = "Bullet collision"
+lifetime = 0.075
+lifetime_variance = 0.025
+emit_by_distance = false
+emit_rate = 0.005
+emit_rate_variance = 0.003
+emit_relative = true
+emit_theta_min = 0
+emit_theta_max = 360
+emit_phi_min = 60
+emit_phi_max = 90
+emit_velocity = 3
+emit_velocity_variance = 1
+
+[[particle_emitter_types]]
+name = "Rocket travel flame"
+lifetime = 0
+lifetime_variance = 0
+emit_by_distance = true
+emit_rate = 0.05
+emit_rate_variance = 0.02
+emit_relative = true
+emit_theta_min = 0
+emit_theta_max = 0
+emit_phi_min = 0
+emit_phi_max = 0
+emit_velocity = 0
+emit_velocity_variance = 0
+
+[[particle_emitter_types]]
+name = "Rocket collision"
+lifetime = 0.05
+lifetime_variance = 0.02
+emit_by_distance = false
+emit_rate = 0.0005
+emit_rate_variance = 0.0001
+emit_relative = true
+emit_theta_min = 0
+emit_theta_max = 360
+emit_phi_min = 15
+emit_phi_max = 90
+emit_velocity = 5
+emit_velocity_variance = 3
+
+[[particle_emitter_types]]
+name = "Robot destroy fireball"
+lifetime = 0.05
+lifetime_variance = 0.02
+emit_by_distance = false
+emit_rate = 0.0005
+emit_rate_variance = 0.0001
+emit_relative = true
+emit_theta_min = 0
+emit_theta_max = 360
+emit_phi_min = -90
+emit_phi_max = 90
+emit_velocity = 10
+emit_velocity_variance = 5
+
+[[particle_emitter_types]]
+name = "Robot destroy debris"
+lifetime = 0.02
+lifetime_variance = 0.01
+emit_by_distance = false
+emit_rate = 0.0005
+emit_rate_variance = 0.0003
+emit_relative = true
+emit_theta_min = 0
+emit_theta_max = 360
+emit_phi_min = -90
+emit_phi_max = 90
+emit_velocity = 20
+emit_velocity_variance = 5
+
+[[particle_effect_definitions]]
+name = "Bullet fire"
+
+[[particle_effect_definitions.components]]
+particle_type = 0
+particle_emitter_type = 0
+
+[[particle_effect_definitions]]
+name = "Bullet collision"
+
+[[particle_effect_definitions.components]]
+particle_type = 1
+particle_emitter_type = 1
+
+[[particle_effect_definitions]]
+name = "Rocket travel"
+
+[[particle_effect_definitions.components]]
+particle_type = 2
+particle_emitter_type = 2
+
+[[particle_effect_definitions]]
+name = "Rocket collision"
+
+[[particle_effect_definitions.components]]
+particle_type = 3
+particle_emitter_type = 3
+
+[[particle_effect_definitions]]
+name = "Robot destroy"
+
+[[particle_effect_definitions.components]]
+particle_type = 4
+particle_emitter_type = 4
+
+[[particle_effect_definitions.components]]
+particle_type = 5
+particle_emitter_type = 5
+

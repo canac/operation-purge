@@ -1,0 +1,1858 @@
+---
+source: tests/gamedata.rs
+expression: data
+---
+GameData {
+    colors: ColorsOptions {
+        background_2d: Rgba {
+            r: 0.0,
+            g: 0.2509804,
+            b: 0.0,
+            a: 0.3764706,
+        },
+        wall_2d: Rgba {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        },
+        barrel_2d: Rgba {
+            r: 0.5019608,
+            g: 0.5019608,
+            b: 0.5019608,
+            a: 1.0,
+        },
+        observer_2d: Rgba {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        },
+        crosshair_2d: Rgba {
+            r: 0.5019608,
+            g: 0.5019608,
+            b: 0.0,
+            a: 1.0,
+        },
+        status_text_2d: Rgba {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        },
+        barrel_3d: Rgba {
+            r: 0.5019608,
+            g: 0.5019608,
+            b: 0.5019608,
+            a: 1.0,
+        },
+        tread_3d: Rgba {
+            r: 0.2509804,
+            g: 0.2509804,
+            b: 0.2509804,
+            a: 1.0,
+        },
+    },
+    building: BuildingOptions {
+        wall_width: 1.0,
+        room_size: 10.0,
+        ceiling_height: 5.0,
+        wall_texture: "Brick.bmp",
+        wall_texture_size: 1.0,
+        floor_texture: "Steel.bmp",
+        floor_texture_size: 0.1,
+        ceiling_texture: "Ceiling.bmp",
+        ceiling_texture_size: 1.0,
+    },
+    sounds: SoundsOptions {
+        enemy_visible_sound: "FastAlarm.wav",
+        targeted_sound: "Alarm.wav",
+        simultaneous_instances: 10,
+    },
+    ui: UiOptions {
+        rotate_rate: 2000.0,
+        elevate_rate: 500.0,
+        accelerate_rate: 1.0,
+        game_speed_rate: 0.3,
+        resize_building_rate: 10.0,
+        move_building_rate: 10.0,
+        move_observer_default_rate: 10.0,
+        move_observer_speed1_rate: 20.0,
+        move_observer_speed2_rate: 50.0,
+        move_observer_speed3_rate: 100.0,
+        commands: [
+            TCommand {
+                key: F4,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: Escape,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: F1,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyP,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: BracketLeft,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: BracketRight,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowRight,
+                control: true,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowUp,
+                control: true,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowLeft,
+                control: true,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowDown,
+                control: true,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowRight,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowUp,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowLeft,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: ArrowDown,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: F2,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: MouseLeft,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: MouseLeft,
+                control: true,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyA,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyS,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyF,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyE,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyD,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyF,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyS,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyR,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyV,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: Digit1,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: Digit2,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: Digit3,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyT,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyG,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyQ,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyV,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyE,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: KeyD,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+            TCommand {
+                key: Space,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+        ],
+    },
+    game_definitions: [
+        GameDefinition {
+            name: "2 Teams Caleb",
+            teams: [
+                TeamDefinition {
+                    name: "Good guys",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    4,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    1,
+                                ),
+                            ),
+                            count: 1,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Bad guys",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 25,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+            ],
+            ammo_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 10,
+                },
+            ],
+            energy_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            health_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 10,
+                },
+            ],
+        },
+        GameDefinition {
+            name: "7 Teams Ethan",
+            teams: [
+                TeamDefinition {
+                    name: "Good guys",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 1,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 1",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 3,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 2",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 3,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 3",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.5019608,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 3,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 4",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 3,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 5",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 3,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 6",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 3,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+            ],
+            ammo_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            energy_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            health_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 2,
+                },
+            ],
+        },
+        GameDefinition {
+            name: "Training 1",
+            teams: [
+                TeamDefinition {
+                    name: "Good guys",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 1,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 1",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 10,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 2",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 10,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+            ],
+            ammo_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            energy_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            health_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 2,
+                },
+            ],
+        },
+        GameDefinition {
+            name: "Training 2",
+            teams: [
+                TeamDefinition {
+                    name: "Good guys",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 1,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 1",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 10,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 2",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 10,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+            ],
+            ammo_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            energy_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            health_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 2,
+                },
+            ],
+        },
+        GameDefinition {
+            name: "Training 3",
+            teams: [
+                TeamDefinition {
+                    name: "Good guys",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 1,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 1",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 10,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy 2",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 10,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+            ],
+            ammo_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            energy_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 5,
+                },
+            ],
+            health_center_groups: [
+                CenterGroup {
+                    center_type: Some(
+                        0,
+                    ),
+                    count: 2,
+                },
+            ],
+        },
+        GameDefinition {
+            name: "Test",
+            teams: [
+                TeamDefinition {
+                    name: "Good guys",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 1,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+                TeamDefinition {
+                    name: "Enemy",
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 1,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.0,
+                            spawn_delay_variance: 0.0,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+            ],
+            ammo_center_groups: [],
+            energy_center_groups: [],
+            health_center_groups: [],
+        },
+        GameDefinition {
+            name: "Target Practice",
+            teams: [
+                TeamDefinition {
+                    name: "Targets",
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    robot_groups: [
+                        RobotGroup {
+                            robot_type: Some(
+                                RobotTypeId(
+                                    3,
+                                ),
+                            ),
+                            ai_robot_type: Some(
+                                AiRobotTypeId(
+                                    0,
+                                ),
+                            ),
+                            count: 20,
+                            initial_delay: 0.0,
+                            initial_delay_variance: 0.0,
+                            spawn_delay: 0.1,
+                            spawn_delay_variance: 0.1,
+                            spawn_from_point: false,
+                        },
+                    ],
+                },
+            ],
+            ammo_center_groups: [],
+            energy_center_groups: [],
+            health_center_groups: [],
+        },
+    ],
+    robot_types: [
+        RobotType {
+            name: "Robot",
+            accel: 5.0,
+            brake_decel: 25.0,
+            friction_decel: 1.0,
+            max_speed: 100.0,
+            rotate_rate: 12.566371,
+            max_visible_dist: 50.0,
+            energy_start: 1000.0,
+            health_start: 5.0,
+            projectile_armor: 1.0,
+            crash_armor: 25.0,
+            destroy_sound: "Destroy.wav",
+            destroy_effect: Some(
+                EffectDefId(
+                    4,
+                ),
+            ),
+            projectile_data: [
+                ProjectileData {
+                    projectile_type: Some(
+                        ProjectileTypeId(
+                            0,
+                        ),
+                    ),
+                    count: 500,
+                    fire_rate: 0.2,
+                    accuracy: 0.05235988,
+                },
+                ProjectileData {
+                    projectile_type: Some(
+                        ProjectileTypeId(
+                            1,
+                        ),
+                    ),
+                    count: 250,
+                    fire_rate: 1.0,
+                    accuracy: 0.08726646,
+                },
+            ],
+        },
+        RobotType {
+            name: "Accurate Robot",
+            accel: 5.0,
+            brake_decel: 25.0,
+            friction_decel: 1.0,
+            max_speed: 100.0,
+            rotate_rate: 12.566371,
+            max_visible_dist: 50.0,
+            energy_start: 1000.0,
+            health_start: 5.0,
+            projectile_armor: 1.0,
+            crash_armor: 25.0,
+            destroy_sound: "Destroy.wav",
+            destroy_effect: Some(
+                EffectDefId(
+                    4,
+                ),
+            ),
+            projectile_data: [
+                ProjectileData {
+                    projectile_type: Some(
+                        ProjectileTypeId(
+                            0,
+                        ),
+                    ),
+                    count: 500,
+                    fire_rate: 0.2,
+                    accuracy: 0.0,
+                },
+                ProjectileData {
+                    projectile_type: Some(
+                        ProjectileTypeId(
+                            1,
+                        ),
+                    ),
+                    count: 250,
+                    fire_rate: 1.0,
+                    accuracy: 0.0,
+                },
+            ],
+        },
+        RobotType {
+            name: "No Ammo Robot",
+            accel: 5.0,
+            brake_decel: 25.0,
+            friction_decel: 1.0,
+            max_speed: 100.0,
+            rotate_rate: 12.566371,
+            max_visible_dist: 50.0,
+            energy_start: 1000.0,
+            health_start: 5.0,
+            projectile_armor: 1.0,
+            crash_armor: 25.0,
+            destroy_sound: "Destroy.wav",
+            destroy_effect: Some(
+                EffectDefId(
+                    4,
+                ),
+            ),
+            projectile_data: [],
+        },
+        RobotType {
+            name: "Motionless Robot",
+            accel: 0.0,
+            brake_decel: 0.0,
+            friction_decel: 0.0,
+            max_speed: 0.0,
+            rotate_rate: 0.0,
+            max_visible_dist: 50.0,
+            energy_start: 0.0,
+            health_start: 5.0,
+            projectile_armor: 1.0,
+            crash_armor: 1.0,
+            destroy_sound: "Destroy.wav",
+            destroy_effect: Some(
+                EffectDefId(
+                    4,
+                ),
+            ),
+            projectile_data: [],
+        },
+        RobotType {
+            name: "Machine Gunner",
+            accel: 15.0,
+            brake_decel: 100.0,
+            friction_decel: 1.0,
+            max_speed: 100.0,
+            rotate_rate: 12.566371,
+            max_visible_dist: 50.0,
+            energy_start: 1000.0,
+            health_start: 50.0,
+            projectile_armor: 5.0,
+            crash_armor: 25.0,
+            destroy_sound: "Destroy.wav",
+            destroy_effect: Some(
+                EffectDefId(
+                    4,
+                ),
+            ),
+            projectile_data: [
+                ProjectileData {
+                    projectile_type: Some(
+                        ProjectileTypeId(
+                            2,
+                        ),
+                    ),
+                    count: 250,
+                    fire_rate: 0.03,
+                    accuracy: 0.0,
+                },
+            ],
+        },
+    ],
+    ai_robot_types: [
+        AiRobotType {
+            name: "AI Robot",
+            desired_speed: 25.0,
+            scan_delay: 0.0,
+            min_wall_dist: 3.0,
+            obstacle_impulse: 1.0,
+            desired_ammo: 0.7,
+            desired_energy: 0.5,
+            desired_health: 0.9,
+            critical_ammo: 0.2,
+            critical_energy: 0.25,
+            critical_health: 0.5,
+        },
+        AiRobotType {
+            name: "AI Machine Gunner",
+            desired_speed: 100.0,
+            scan_delay: 0.0,
+            min_wall_dist: 3.0,
+            obstacle_impulse: 1.0,
+            desired_ammo: 0.25,
+            desired_energy: 0.3,
+            desired_health: 0.75,
+            critical_ammo: 0.25,
+            critical_energy: 0.2,
+            critical_health: 0.2,
+        },
+    ],
+    projectile_types: [
+        ProjectileType {
+            name: "Bullet",
+            initial_speed: 100.0,
+            damage: 1.0,
+            damage_variance: 0.0,
+            gravity_accel: 10.0,
+            size: 0.05,
+            hole_size: 0.1,
+            texture: "Projectile.png",
+            hole_texture: "Hole.png",
+            fire_sound: "BulletFire.wav",
+            collision_sound: "BulletCollision.wav",
+            fire_effect: Some(
+                EffectDefId(
+                    0,
+                ),
+            ),
+            travel_effect: None,
+            collision_effect: Some(
+                EffectDefId(
+                    1,
+                ),
+            ),
+            fire_command: TCommand {
+                key: MouseLeft,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+        },
+        ProjectileType {
+            name: "Rocket",
+            initial_speed: 250.0,
+            damage: 5.0,
+            damage_variance: 0.0,
+            gravity_accel: 10.0,
+            size: 0.1,
+            hole_size: 0.25,
+            texture: "",
+            hole_texture: "Hole.png",
+            fire_sound: "RocketFire.wav",
+            collision_sound: "RocketCollision.wav",
+            fire_effect: None,
+            travel_effect: Some(
+                EffectDefId(
+                    2,
+                ),
+            ),
+            collision_effect: Some(
+                EffectDefId(
+                    3,
+                ),
+            ),
+            fire_command: TCommand {
+                key: MouseRight,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+        },
+        ProjectileType {
+            name: "Better Bullet",
+            initial_speed: 1000.0,
+            damage: 1.0,
+            damage_variance: 0.0,
+            gravity_accel: 0.0,
+            size: 0.05,
+            hole_size: 0.15,
+            texture: "Projectile.png",
+            hole_texture: "Hole.png",
+            fire_sound: "BulletFire.wav",
+            collision_sound: "BulletCollision.wav",
+            fire_effect: Some(
+                EffectDefId(
+                    0,
+                ),
+            ),
+            travel_effect: None,
+            collision_effect: Some(
+                EffectDefId(
+                    1,
+                ),
+            ),
+            fire_command: TCommand {
+                key: MouseLeft,
+                control: false,
+                alt: false,
+                shift: false,
+            },
+        },
+    ],
+    center_types: CenterTypes {
+        ammo: [
+            AmmoCenterType {
+                name: "Ammo center",
+                size: 5.0,
+                color: Rgba {
+                    r: 0.5019608,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.3764706,
+                },
+                transfer_rates: [
+                    TransferRate {
+                        projectile_type: Some(
+                            ProjectileTypeId(
+                                0,
+                            ),
+                        ),
+                        transfer_rate: 0.1,
+                    },
+                    TransferRate {
+                        projectile_type: Some(
+                            ProjectileTypeId(
+                                1,
+                            ),
+                        ),
+                        transfer_rate: 0.25,
+                    },
+                    TransferRate {
+                        projectile_type: Some(
+                            ProjectileTypeId(
+                                2,
+                            ),
+                        ),
+                        transfer_rate: 0.1,
+                    },
+                ],
+            },
+        ],
+        energy: [
+            EnergyCenterType {
+                name: "Energy center",
+                size: 5.0,
+                color: Rgba {
+                    r: 0.0,
+                    g: 0.5019608,
+                    b: 0.0,
+                    a: 0.3764706,
+                },
+                transfer_rate: 0.1,
+            },
+        ],
+        health: [
+            HealthCenterType {
+                name: "Health center",
+                size: 5.0,
+                color: Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.5019608,
+                    a: 0.3764706,
+                },
+                transfer_rate: 0.1,
+            },
+        ],
+    },
+    particle_types: [
+        ParticleType {
+            name: "Bullet fire",
+            texture_file: "Smoke.png",
+            lifetime: 0.1,
+            lifetime_variance: 0.03,
+            stages: [
+                ParticleStage {
+                    color: Rgba {
+                        r: 0.3764706,
+                        g: 0.3764706,
+                        b: 0.3764706,
+                        a: 0.7529412,
+                    },
+                    size: 0.1,
+                    time: 0.0,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 0.5019608,
+                        g: 0.5019608,
+                        b: 0.5019608,
+                        a: 0.0,
+                    },
+                    size: 0.1,
+                    time: 1.0,
+                },
+            ],
+            inherited_velocity_factor: 0.0,
+            rise_speed: 0.5,
+            rise_acceleration: 0.0,
+            initial_rotation: 0.0,
+            initial_rotation_variance: 3.1415927,
+            rotation_rate: 0.0,
+            rotation_rate_variance: 17.453293,
+        },
+        ParticleType {
+            name: "Bullet collision",
+            texture_file: "Smoke.png",
+            lifetime: 0.1,
+            lifetime_variance: 0.03,
+            stages: [
+                ParticleStage {
+                    color: Rgba {
+                        r: 0.3764706,
+                        g: 0.3764706,
+                        b: 0.3764706,
+                        a: 0.7529412,
+                    },
+                    size: 0.1,
+                    time: 0.0,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 0.5019608,
+                        g: 0.5019608,
+                        b: 0.5019608,
+                        a: 0.0,
+                    },
+                    size: 0.1,
+                    time: 1.0,
+                },
+            ],
+            inherited_velocity_factor: 0.0,
+            rise_speed: 0.5,
+            rise_acceleration: 0.0,
+            initial_rotation: 0.0,
+            initial_rotation_variance: 3.1415927,
+            rotation_rate: 0.0,
+            rotation_rate_variance: 17.453293,
+        },
+        ParticleType {
+            name: "Rocket travel flame",
+            texture_file: "Smoke.png",
+            lifetime: 0.005,
+            lifetime_variance: 0.002,
+            stages: [
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    size: 0.1,
+                    time: 0.0,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.5019608,
+                        b: 0.0,
+                        a: 0.2509804,
+                    },
+                    size: 0.25,
+                    time: 0.25,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 0.0,
+                    },
+                    size: 0.5,
+                    time: 1.0,
+                },
+            ],
+            inherited_velocity_factor: 0.0,
+            rise_speed: 1.0,
+            rise_acceleration: 0.0,
+            initial_rotation: 0.0,
+            initial_rotation_variance: 3.1415927,
+            rotation_rate: 0.0,
+            rotation_rate_variance: 1.7453293,
+        },
+        ParticleType {
+            name: "Rocket collision",
+            texture_file: "Smoke.png",
+            lifetime: 0.2,
+            lifetime_variance: 0.1,
+            stages: [
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    size: 0.1,
+                    time: 0.0,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.5019608,
+                        b: 0.0,
+                        a: 0.2509804,
+                    },
+                    size: 0.25,
+                    time: 0.25,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 0.0,
+                    },
+                    size: 0.5,
+                    time: 1.0,
+                },
+            ],
+            inherited_velocity_factor: 0.0,
+            rise_speed: 0.0,
+            rise_acceleration: 0.0,
+            initial_rotation: 0.0,
+            initial_rotation_variance: 3.1415927,
+            rotation_rate: 0.0,
+            rotation_rate_variance: 1.7453293,
+        },
+        ParticleType {
+            name: "Robot destroy fireball",
+            texture_file: "Smoke.png",
+            lifetime: 0.2,
+            lifetime_variance: 0.1,
+            stages: [
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    size: 0.1,
+                    time: 0.0,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 0.5019608,
+                        b: 0.0,
+                        a: 0.2509804,
+                    },
+                    size: 0.25,
+                    time: 0.25,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 0.0,
+                    },
+                    size: 0.5,
+                    time: 1.0,
+                },
+            ],
+            inherited_velocity_factor: 0.0,
+            rise_speed: 0.0,
+            rise_acceleration: 0.0,
+            initial_rotation: 0.0,
+            initial_rotation_variance: 3.1415927,
+            rotation_rate: 0.0,
+            rotation_rate_variance: 1.7453293,
+        },
+        ParticleType {
+            name: "Robot destroy debris",
+            texture_file: "Smoke.png",
+            lifetime: 0.5,
+            lifetime_variance: 0.2,
+            stages: [
+                ParticleStage {
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    size: 0.1,
+                    time: 0.0,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.2509804,
+                    },
+                    size: 0.1,
+                    time: 0.75,
+                },
+                ParticleStage {
+                    color: Rgba {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.0,
+                    },
+                    size: 0.1,
+                    time: 1.0,
+                },
+            ],
+            inherited_velocity_factor: 0.0,
+            rise_speed: 0.0,
+            rise_acceleration: -25.0,
+            initial_rotation: 0.0,
+            initial_rotation_variance: 3.1415927,
+            rotation_rate: 0.0,
+            rotation_rate_variance: 17.453293,
+        },
+    ],
+    particle_emitter_types: [
+        ParticleEmitterType {
+            name: "Bullet fire",
+            lifetime: 0.075,
+            lifetime_variance: 0.025,
+            emit_by_distance: false,
+            emit_rate: 0.005,
+            emit_rate_variance: 0.003,
+            emit_relative: true,
+            emit_theta_min: 0.0,
+            emit_theta_max: 6.2831855,
+            emit_phi_min: 1.0471976,
+            emit_phi_max: 1.5707964,
+            emit_velocity: 3.0,
+            emit_velocity_variance: 1.0,
+        },
+        ParticleEmitterType {
+            name: "Bullet collision",
+            lifetime: 0.075,
+            lifetime_variance: 0.025,
+            emit_by_distance: false,
+            emit_rate: 0.005,
+            emit_rate_variance: 0.003,
+            emit_relative: true,
+            emit_theta_min: 0.0,
+            emit_theta_max: 6.2831855,
+            emit_phi_min: 1.0471976,
+            emit_phi_max: 1.5707964,
+            emit_velocity: 3.0,
+            emit_velocity_variance: 1.0,
+        },
+        ParticleEmitterType {
+            name: "Rocket travel flame",
+            lifetime: 0.0,
+            lifetime_variance: 0.0,
+            emit_by_distance: true,
+            emit_rate: 0.05,
+            emit_rate_variance: 0.02,
+            emit_relative: true,
+            emit_theta_min: 0.0,
+            emit_theta_max: 0.0,
+            emit_phi_min: 0.0,
+            emit_phi_max: 0.0,
+            emit_velocity: 0.0,
+            emit_velocity_variance: 0.0,
+        },
+        ParticleEmitterType {
+            name: "Rocket collision",
+            lifetime: 0.05,
+            lifetime_variance: 0.02,
+            emit_by_distance: false,
+            emit_rate: 0.0005,
+            emit_rate_variance: 0.0001,
+            emit_relative: true,
+            emit_theta_min: 0.0,
+            emit_theta_max: 6.2831855,
+            emit_phi_min: 0.2617994,
+            emit_phi_max: 1.5707964,
+            emit_velocity: 5.0,
+            emit_velocity_variance: 3.0,
+        },
+        ParticleEmitterType {
+            name: "Robot destroy fireball",
+            lifetime: 0.05,
+            lifetime_variance: 0.02,
+            emit_by_distance: false,
+            emit_rate: 0.0005,
+            emit_rate_variance: 0.0001,
+            emit_relative: true,
+            emit_theta_min: 0.0,
+            emit_theta_max: 6.2831855,
+            emit_phi_min: -1.5707964,
+            emit_phi_max: 1.5707964,
+            emit_velocity: 10.0,
+            emit_velocity_variance: 5.0,
+        },
+        ParticleEmitterType {
+            name: "Robot destroy debris",
+            lifetime: 0.02,
+            lifetime_variance: 0.01,
+            emit_by_distance: false,
+            emit_rate: 0.0005,
+            emit_rate_variance: 0.0003,
+            emit_relative: true,
+            emit_theta_min: 0.0,
+            emit_theta_max: 6.2831855,
+            emit_phi_min: -1.5707964,
+            emit_phi_max: 1.5707964,
+            emit_velocity: 20.0,
+            emit_velocity_variance: 5.0,
+        },
+    ],
+    particle_effect_definitions: [
+        ParticleEffectDefinition {
+            name: "Bullet fire",
+            components: [
+                ParticleEffectComponent {
+                    particle_type: Some(
+                        ParticleTypeId(
+                            0,
+                        ),
+                    ),
+                    particle_emitter_type: Some(
+                        EmitterTypeId(
+                            0,
+                        ),
+                    ),
+                },
+            ],
+        },
+        ParticleEffectDefinition {
+            name: "Bullet collision",
+            components: [
+                ParticleEffectComponent {
+                    particle_type: Some(
+                        ParticleTypeId(
+                            1,
+                        ),
+                    ),
+                    particle_emitter_type: Some(
+                        EmitterTypeId(
+                            1,
+                        ),
+                    ),
+                },
+            ],
+        },
+        ParticleEffectDefinition {
+            name: "Rocket travel",
+            components: [
+                ParticleEffectComponent {
+                    particle_type: Some(
+                        ParticleTypeId(
+                            2,
+                        ),
+                    ),
+                    particle_emitter_type: Some(
+                        EmitterTypeId(
+                            2,
+                        ),
+                    ),
+                },
+            ],
+        },
+        ParticleEffectDefinition {
+            name: "Rocket collision",
+            components: [
+                ParticleEffectComponent {
+                    particle_type: Some(
+                        ParticleTypeId(
+                            3,
+                        ),
+                    ),
+                    particle_emitter_type: Some(
+                        EmitterTypeId(
+                            3,
+                        ),
+                    ),
+                },
+            ],
+        },
+        ParticleEffectDefinition {
+            name: "Robot destroy",
+            components: [
+                ParticleEffectComponent {
+                    particle_type: Some(
+                        ParticleTypeId(
+                            4,
+                        ),
+                    ),
+                    particle_emitter_type: Some(
+                        EmitterTypeId(
+                            4,
+                        ),
+                    ),
+                },
+                ParticleEffectComponent {
+                    particle_type: Some(
+                        ParticleTypeId(
+                            5,
+                        ),
+                    ),
+                    particle_emitter_type: Some(
+                        EmitterTypeId(
+                            5,
+                        ),
+                    ),
+                },
+            ],
+        },
+    ],
+}

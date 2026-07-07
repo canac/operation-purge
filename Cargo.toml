@@ -1,0 +1,45 @@
+[package]
+name = "operation-purge"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+default-run = "operation-purge"
+
+[lib]
+name = "operation_purge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "operation-purge"
+path = "src/main.rs"
+
+[[bin]]
+name = "mazegen"
+path = "src/bin/mazegen.rs"
+
+[[bin]]
+name = "cutwav"
+path = "src/bin/cutwav.rs"
+
+[dependencies]
+ab_glyph = "0.2.32"
+anyhow = "1.0.103"
+bytemuck = { version = "1.25.0", features = ["derive"] }
+dirs = "6.0.0"
+glam = "0.33.2"
+glow = "0.17.0"
+glutin = "0.32.3"
+glutin-winit = "0.5.0"
+hound = "3.5.1"
+image = "0.25.10"
+kira = "0.12.1"
+rand = "0.10.2"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"
+toml = "1.1.2"
+walkdir = "2.5.0"
+winit = "0.30.13"
+
+[dev-dependencies]
+insta = "1.48.0"
+proptest = "1.11.0"
