@@ -4,6 +4,21 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
 default-run = "operation-purge"
+description = "A faithful Rust + OpenGL port of the 2011 C++/Direct3D9 game Operation Purge."
+license = "MIT"
+readme = "README.md"
+keywords = ["game", "opengl", "port", "direct3d9"]
+categories = ["games"]
+
+# macOS .app packaging metadata for `cargo bundle` (optional; not required to
+# build — see README "Packaging"). `cargo install cargo-bundle` then
+# `cargo bundle --release`.
+[package.metadata.bundle]
+name = "Operation Purge"
+identifier = "com.canacgames.operation-purge"
+icon = []
+category = "public.app-category.action-games"
+short_description = "A faithful Rust + OpenGL port of Operation Purge (2011)."
 
 [lib]
 name = "operation_purge"

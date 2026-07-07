@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    name: build + test + clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pin the toolchain to the crate's rust-version (1.96). The test suite
+      # is fully headless — no display server / audio device is required.
+      - name: Install Rust 1.96
+        uses: dtolnay/rust-toolchain@1.96
+        with:
+          components: clippy
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # Linux needs the winit/glutin windowing + ALSA dev headers to *compile*
+      # the graphics/audio crates (no display/device is used at test time).
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev libxi-dev libxcursor-dev libxrandr-dev \
+            libxkbcommon-dev libwayland-dev libasound2-dev \
+            libgl1-mesa-dev
+
+      - name: Build (all targets)
+        run: cargo build --all-targets --verbose
+
+      - name: Test
+        run: cargo test --all-targets --verbose
+
+      # Advisory: the codebase carries a handful of intentional lint triggers
+      # (e.g. PARITY code with "no-effect" ops). Clippy runs and reports, but
+      # does not gate the build; tighten to `-- -D warnings` once triaged.
+      - name: Clippy
+        run: cargo clippy --all-targets
