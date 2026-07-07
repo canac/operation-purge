@@ -331,6 +331,18 @@ fn ensure_ai(world: &mut World) {
     // Prune dead robots' runtimes.
     world.ai.retain(|id, _| world.robots.contains_key(id));
 
+    // Robots that appeared this frame and still need an AI runtime. Usually
+    // empty (spawns are occasional), so bail before building the map below.
+    let missing: Vec<RobotId> = world
+        .robots
+        .keys()
+        .filter(|id| !world.ai.contains_key(id))
+        .copied()
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+
     // robot_type -> ai_robot_type from the active game definition's groups.
     let def = &world.game_data.game_definitions[world.game_def.get() as usize];
     let mut rt_to_ai: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
@@ -341,13 +353,6 @@ fn ensure_ai(world: &mut World) {
             }
         }
     }
-
-    let missing: Vec<RobotId> = world
-        .robots
-        .keys()
-        .filter(|id| !world.ai.contains_key(id))
-        .copied()
-        .collect();
     let room_size = world.building.room_size;
 
     for id in missing {

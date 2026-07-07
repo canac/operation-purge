@@ -794,6 +794,11 @@ impl World {
 
     /// PARITY: `cOperationPurge::SpawnRobots` (`cOperationPurge.cpp:2235-2309`).
     fn spawn_robots(&mut self, team: usize, dt: f32) {
+        // A finished team does no further RNG/state work — bail before the
+        // per-frame clones below (the flag is persisted, so this is exact).
+        if self.spawn_info[team].finished_spawning {
+            return;
+        }
         let groups = self.game_definition().teams[team].robot_groups.clone();
         if groups.is_empty() {
             self.spawn_info[team].finished_spawning = true;
