@@ -170,6 +170,19 @@ impl Maze {
         Ok(())
     }
 
+    /// `GetWall(X, Y, wallX)` (`cMaze.cpp:246`) — the X-direction
+    /// (horizontal) wall = top edge of room `(x, y)`. Out-of-grid = no
+    /// wall (GUARD), matching the non-crashing in-range reads.
+    pub fn wall_x(&self, x: i32, y: i32) -> bool {
+        self.h_wall(x, y)
+    }
+
+    /// `GetWall(X, Y, wallY)` (`cMaze.cpp:246`) — the Y-direction
+    /// (vertical) wall = left edge of room `(x, y)`. Out-of-grid = no wall.
+    pub fn wall_y(&self, x: i32, y: i32) -> bool {
+        self.v_wall(x, y)
+    }
+
     /// `h_walls[y*cx + x]` accessor with GUARD out-of-grid = no wall
     /// (design §1.3; open-edge mazes stay legal).
     fn h_wall(&self, x: i32, y: i32) -> bool {

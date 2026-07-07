@@ -94,6 +94,17 @@ pub const COMMAND_ORDER: [Command; 36] = [
     Command::FireProjectiles,
 ];
 
+impl Command {
+    /// Position of this command in the fixed `eCommand` index space
+    /// (`COMMAND_ORDER`) — the same index `[ui].commands` binds against.
+    pub fn index(self) -> usize {
+        COMMAND_ORDER
+            .iter()
+            .position(|&c| c == self)
+            .expect("every Command variant is in COMMAND_ORDER")
+    }
+}
+
 /// A binding: key + modifier requirements. PARITY: modifiers test
 /// *either*-side keys (design §5.2 "modifier flags bControl/bAlt/bShift
 /// test either-side keys").
@@ -103,6 +114,95 @@ pub struct CommandBinding {
     pub control: bool,
     pub alt: bool,
     pub shift: bool,
+}
+
+impl CommandBinding {
+    /// Lift a data-layer `TCommand` (already key-resolved from its
+    /// display-name string) into an input binding.
+    pub fn from_tcommand(cmd: &crate::data::TCommand) -> Self {
+        Self {
+            key: cmd.key,
+            control: cmd.control,
+            alt: cmd.alt,
+            shift: cmd.shift,
+        }
+    }
+
+    /// PARITY (`cOperationPurge::GetCommandState`, cOperationPurge.cpp:3116-3144
+    /// with the verified `bExactModifiers = false`): a *required* modifier
+    /// must be held (either side); a *non-required* modifier is ignored
+    /// (holding Shift never suppresses a command that doesn't ask for
+    /// Shift). Formally, for each modifier m: `!required_m || down_m`.
+    pub fn modifiers_satisfied(&self, input: &super::Input) -> bool {
+        (!self.control || input.control_down())
+            && (!self.alt || input.alt_down())
+            && (!self.shift || input.shift_down())
+    }
+
+    /// `bDown`: the bound key is down AND the required modifiers are held.
+    pub fn is_down(&self, input: &super::Input) -> bool {
+        input.is_down(self.key) && self.modifiers_satisfied(input)
+    }
+
+    /// `bPressed`: the bound key edged down this frame AND modifiers hold.
+    pub fn just_pressed(&self, input: &super::Input) -> bool {
+        input.just_pressed(self.key) && self.modifiers_satisfied(input)
+    }
+
+    /// `bReleased`: the bound key edged up this frame AND modifiers hold.
+    pub fn just_released(&self, input: &super::Input) -> bool {
+        input.just_released(self.key) && self.modifiers_satisfied(input)
+    }
+}
+
+/// The full resolved binding set: the 36 fixed commands (in `COMMAND_ORDER`
+/// index space) plus one fire binding per projectile type
+/// (`ProjectileType.fire_command`), loaded from `GameData` (design §5.2).
+#[derive(Clone, Debug)]
+pub struct CommandBindings {
+    /// Indexed by `Command::index()` / `COMMAND_ORDER` position.
+    pub commands: [CommandBinding; 36],
+    /// One per `GameData.projectile_types` entry, in array order (the index
+    /// space `ProjectileType` refs point into).
+    pub fire_commands: Vec<CommandBinding>,
+}
+
+impl CommandBindings {
+    /// Resolve all bindings from loaded game data. The 36-entry shape of
+    /// `ui.commands` is already enforced at load (data/gamedata.rs); this
+    /// re-checks defensively (GUARD) so a mismatch is a clean error, not a
+    /// panic on `try_into`.
+    pub fn from_game_data(data: &crate::data::GameData) -> Result<Self, crate::error::GameError> {
+        if data.ui.commands.len() != 36 {
+            return Err(crate::error::GameError::Other(format!(
+                "[ui].commands must have exactly 36 entries, found {}",
+                data.ui.commands.len()
+            )));
+        }
+        let mut commands = [CommandBinding {
+            key: crate::input::keys::KEY_LAST,
+            control: false,
+            alt: false,
+            shift: false,
+        }; 36];
+        for (i, tcmd) in data.ui.commands.iter().enumerate() {
+            commands[i] = CommandBinding::from_tcommand(tcmd);
+        }
+        let fire_commands = data
+            .projectile_types
+            .iter()
+            .map(|pt| CommandBinding::from_tcommand(&pt.fire_command))
+            .collect();
+        Ok(Self {
+            commands,
+            fire_commands,
+        })
+    }
+
+    /// The binding for a fixed command.
+    pub fn binding(&self, command: Command) -> &CommandBinding {
+        &self.commands[command.index()]
+    }
 }
 
 #[cfg(test)]
@@ -125,5 +225,90 @@ mod tests {
         assert_eq!(COMMAND_ORDER[14], Command::Info);
         assert_eq!(COMMAND_ORDER[17], Command::Enter2DMode);
         assert_eq!(COMMAND_ORDER[35], Command::FireProjectiles);
+    }
+
+    #[test]
+    fn command_index_is_the_inverse_of_command_order() {
+        for (i, &cmd) in COMMAND_ORDER.iter().enumerate() {
+            assert_eq!(cmd.index(), i);
+        }
+    }
+
+    use crate::input::keys::Key;
+    use crate::input::Input;
+
+    fn binding(key: Key, control: bool, alt: bool, shift: bool) -> CommandBinding {
+        CommandBinding {
+            key,
+            control,
+            alt,
+            shift,
+        }
+    }
+
+    #[test]
+    fn plain_binding_ignores_extra_held_modifiers() {
+        // PARITY: bExactModifiers = false — a command with no required
+        // modifier still fires while Shift/Ctrl/Alt happen to be down.
+        let b = binding(Key::KeyF, false, false, false);
+        let mut input = Input::new();
+        input.on_key_event(Key::KeyF, true);
+        input.on_key_event(Key::ShiftLeft, true);
+        input.on_key_event(Key::ControlRight, true);
+        input.begin_frame();
+        assert!(b.is_down(&input));
+    }
+
+    #[test]
+    fn required_modifier_must_be_held_either_side() {
+        let b = binding(Key::KeyR, true, false, false); // Ctrl+R
+        let mut input = Input::new();
+        input.on_key_event(Key::KeyR, true);
+        input.begin_frame();
+        assert!(!b.is_down(&input), "no Ctrl held ⇒ inactive");
+
+        // Right control satisfies a Ctrl requirement (either-side).
+        input.on_key_event(Key::ControlRight, true);
+        input.begin_frame();
+        assert!(b.is_down(&input));
+    }
+
+    #[test]
+    fn pressed_and_released_edges_respect_modifiers() {
+        let b = binding(Key::KeyP, false, false, true); // Shift+P
+        let mut input = Input::new();
+        input.begin_frame(); // consume the first-frame edge suppression (FIX)
+        input.on_key_event(Key::ShiftLeft, true);
+        input.on_key_event(Key::KeyP, true);
+        input.begin_frame();
+        assert!(b.just_pressed(&input));
+        assert!(b.is_down(&input));
+        // Hold: no repeated press edge.
+        input.begin_frame();
+        assert!(!b.just_pressed(&input));
+        // Release the key.
+        input.on_key_event(Key::KeyP, false);
+        input.begin_frame();
+        assert!(b.just_released(&input));
+    }
+
+    #[test]
+    fn bindings_resolve_from_the_shipped_game_data() {
+        let path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/GameData.toml"
+        ));
+        let data = crate::data::gamedata::load(path).expect("shipped GameData.toml parses");
+
+        let bindings = CommandBindings::from_game_data(&data).expect("36 commands resolve");
+        assert_eq!(bindings.commands.len(), 36);
+        assert_eq!(bindings.fire_commands.len(), data.projectile_types.len());
+
+        // Every fixed command's binding is exactly the ui.commands entry at
+        // the same index — the whole point of the index-space ABI.
+        for (i, tcmd) in data.ui.commands.iter().enumerate() {
+            assert_eq!(bindings.commands[i], CommandBinding::from_tcommand(tcmd));
+            assert_eq!(bindings.binding(COMMAND_ORDER[i]).key, tcmd.key);
+        }
     }
 }

@@ -69,7 +69,10 @@ fn main() -> anyhow::Result<()> {
         config.assets_dir, config.vsync, config.seed, args.fixed_dt
     );
 
-    // Window/GL/App wiring lands at M3; M0 only needs a clean startup +
-    // shutdown path.
+    // M3: open the window, create the GL context, and run the input/text
+    // shell (borderless fullscreen; Esc quits). See RUN.md for what to
+    // eyeball. `--fixed-dt` is a headless-test-only flag and does not drive
+    // this interactive path.
+    operation_purge::app::run(config)?;
     Ok(())
 }

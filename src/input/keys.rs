@@ -16,6 +16,9 @@
 //! below already match winit's `KeyCode` naming so that mapping is
 //! mechanical.
 
+use winit::event::MouseButton;
+use winit::keyboard::{KeyCode, PhysicalKey};
+
 /// One of the 100 bindable physical keys/buttons.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[repr(u8)]
@@ -249,10 +252,157 @@ impl Key {
     }
 
     pub fn from_display_name(name: &str) -> Option<Key> {
+        KEY_TABLE.iter().find(|(_, n)| *n == name).map(|(k, _)| *k)
+    }
+
+    /// The winit physical `KeyCode` this key corresponds to, or `None` for
+    /// the three mouse buttons (which arrive via `MouseButton`, not the
+    /// keyboard, design §5.2). PARITY: DirectInput used physical scancodes
+    /// (`DIK_*`); winit `KeyCode` is likewise physical/layout-independent,
+    /// and our variant names were chosen to match winit's `KeyCode` naming
+    /// 1:1 so this mapping is mechanical (`cDirectInput.cpp:9-108`).
+    pub fn key_code(self) -> Option<KeyCode> {
+        use Key::*;
+        Some(match self {
+            KeyA => KeyCode::KeyA,
+            KeyB => KeyCode::KeyB,
+            KeyC => KeyCode::KeyC,
+            KeyD => KeyCode::KeyD,
+            KeyE => KeyCode::KeyE,
+            KeyF => KeyCode::KeyF,
+            KeyG => KeyCode::KeyG,
+            KeyH => KeyCode::KeyH,
+            KeyI => KeyCode::KeyI,
+            KeyJ => KeyCode::KeyJ,
+            KeyK => KeyCode::KeyK,
+            KeyL => KeyCode::KeyL,
+            KeyM => KeyCode::KeyM,
+            KeyN => KeyCode::KeyN,
+            KeyO => KeyCode::KeyO,
+            KeyP => KeyCode::KeyP,
+            KeyQ => KeyCode::KeyQ,
+            KeyR => KeyCode::KeyR,
+            KeyS => KeyCode::KeyS,
+            KeyT => KeyCode::KeyT,
+            KeyU => KeyCode::KeyU,
+            KeyV => KeyCode::KeyV,
+            KeyW => KeyCode::KeyW,
+            KeyX => KeyCode::KeyX,
+            KeyY => KeyCode::KeyY,
+            KeyZ => KeyCode::KeyZ,
+            Digit0 => KeyCode::Digit0,
+            Digit1 => KeyCode::Digit1,
+            Digit2 => KeyCode::Digit2,
+            Digit3 => KeyCode::Digit3,
+            Digit4 => KeyCode::Digit4,
+            Digit5 => KeyCode::Digit5,
+            Digit6 => KeyCode::Digit6,
+            Digit7 => KeyCode::Digit7,
+            Digit8 => KeyCode::Digit8,
+            Digit9 => KeyCode::Digit9,
+            Backquote => KeyCode::Backquote,
+            BracketLeft => KeyCode::BracketLeft,
+            BracketRight => KeyCode::BracketRight,
+            Backslash => KeyCode::Backslash,
+            Semicolon => KeyCode::Semicolon,
+            Quote => KeyCode::Quote,
+            Comma => KeyCode::Comma,
+            Period => KeyCode::Period,
+            Slash => KeyCode::Slash,
+            Minus => KeyCode::Minus,
+            Equal => KeyCode::Equal,
+            Backspace => KeyCode::Backspace,
+            Enter => KeyCode::Enter,
+            Tab => KeyCode::Tab,
+            Escape => KeyCode::Escape,
+            Insert => KeyCode::Insert,
+            Delete => KeyCode::Delete,
+            Home => KeyCode::Home,
+            End => KeyCode::End,
+            PageUp => KeyCode::PageUp,
+            PageDown => KeyCode::PageDown,
+            NumpadAdd => KeyCode::NumpadAdd,
+            NumpadSubtract => KeyCode::NumpadSubtract,
+            NumpadMultiply => KeyCode::NumpadMultiply,
+            NumpadDivide => KeyCode::NumpadDivide,
+            Numpad0 => KeyCode::Numpad0,
+            Numpad1 => KeyCode::Numpad1,
+            Numpad2 => KeyCode::Numpad2,
+            Numpad3 => KeyCode::Numpad3,
+            Numpad4 => KeyCode::Numpad4,
+            Numpad5 => KeyCode::Numpad5,
+            Numpad6 => KeyCode::Numpad6,
+            Numpad7 => KeyCode::Numpad7,
+            Numpad8 => KeyCode::Numpad8,
+            Numpad9 => KeyCode::Numpad9,
+            NumpadDecimal => KeyCode::NumpadDecimal,
+            NumpadEnter => KeyCode::NumpadEnter,
+            ArrowLeft => KeyCode::ArrowLeft,
+            ArrowRight => KeyCode::ArrowRight,
+            ArrowUp => KeyCode::ArrowUp,
+            ArrowDown => KeyCode::ArrowDown,
+            Space => KeyCode::Space,
+            F1 => KeyCode::F1,
+            F2 => KeyCode::F2,
+            F3 => KeyCode::F3,
+            F4 => KeyCode::F4,
+            F5 => KeyCode::F5,
+            F6 => KeyCode::F6,
+            F7 => KeyCode::F7,
+            F8 => KeyCode::F8,
+            F9 => KeyCode::F9,
+            F10 => KeyCode::F10,
+            F11 => KeyCode::F11,
+            F12 => KeyCode::F12,
+            Pause => KeyCode::Pause,
+            ControlLeft => KeyCode::ControlLeft,
+            ControlRight => KeyCode::ControlRight,
+            AltLeft => KeyCode::AltLeft,
+            AltRight => KeyCode::AltRight,
+            ShiftLeft => KeyCode::ShiftLeft,
+            ShiftRight => KeyCode::ShiftRight,
+            MouseLeft | MouseRight | MouseMiddle => return None,
+        })
+    }
+
+    /// The winit `MouseButton` this key corresponds to, or `None` for every
+    /// keyboard key (ordinals 0..=96, design §5.2).
+    pub fn mouse_button(self) -> Option<MouseButton> {
+        match self {
+            Key::MouseLeft => Some(MouseButton::Left),
+            Key::MouseRight => Some(MouseButton::Right),
+            Key::MouseMiddle => Some(MouseButton::Middle),
+            _ => None,
+        }
+    }
+
+    /// Inverse of [`Key::key_code`].
+    pub fn from_key_code(code: KeyCode) -> Option<Key> {
         KEY_TABLE
             .iter()
-            .find(|(_, n)| *n == name)
+            .find(|(k, _)| k.key_code() == Some(code))
             .map(|(k, _)| *k)
+    }
+
+    /// Resolve a winit `PhysicalKey` to a bindable `Key` (only physical
+    /// scancodes are honored — `PhysicalKey::Unidentified` never binds).
+    pub fn from_physical_key(key: PhysicalKey) -> Option<Key> {
+        match key {
+            PhysicalKey::Code(code) => Key::from_key_code(code),
+            PhysicalKey::Unidentified(_) => None,
+        }
+    }
+
+    /// Inverse of [`Key::mouse_button`]. PARITY: only the three buttons the
+    /// original tracked (`keyLeftButton`/`keyRightButton`/`keyMiddleButton`)
+    /// bind; extra buttons (`Back`/`Forward`/`Other`) are ignored.
+    pub fn from_mouse_button(button: MouseButton) -> Option<Key> {
+        match button {
+            MouseButton::Left => Some(Key::MouseLeft),
+            MouseButton::Right => Some(Key::MouseRight),
+            MouseButton::Middle => Some(Key::MouseMiddle),
+            _ => None,
+        }
     }
 }
 
@@ -293,5 +443,62 @@ mod tests {
         assert!(Key::MouseLeft.ordinal() > KEY_LAST.ordinal());
         assert!(Key::MouseRight.ordinal() > KEY_LAST.ordinal());
         assert!(Key::MouseMiddle.ordinal() > KEY_LAST.ordinal());
+    }
+
+    #[test]
+    fn every_keyboard_key_round_trips_through_winit_key_code() {
+        for (key, _) in KEY_TABLE.iter() {
+            match key.mouse_button() {
+                Some(_) => {
+                    // Mouse buttons have no KeyCode.
+                    assert_eq!(key.key_code(), None);
+                }
+                None => {
+                    let code = key
+                        .key_code()
+                        .expect("every non-mouse key maps to a KeyCode");
+                    assert_eq!(Key::from_key_code(code), Some(*key));
+                    assert_eq!(
+                        Key::from_physical_key(PhysicalKey::Code(code)),
+                        Some(*key)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn exactly_three_keys_are_mouse_buttons() {
+        let mouse: Vec<_> = KEY_TABLE
+            .iter()
+            .filter(|(k, _)| k.mouse_button().is_some())
+            .map(|(k, _)| *k)
+            .collect();
+        assert_eq!(mouse, vec![Key::MouseLeft, Key::MouseRight, Key::MouseMiddle]);
+    }
+
+    #[test]
+    fn mouse_button_round_trip() {
+        assert_eq!(Key::from_mouse_button(MouseButton::Left), Some(Key::MouseLeft));
+        assert_eq!(
+            Key::from_mouse_button(MouseButton::Right),
+            Some(Key::MouseRight)
+        );
+        assert_eq!(
+            Key::from_mouse_button(MouseButton::Middle),
+            Some(Key::MouseMiddle)
+        );
+        // PARITY: extra buttons don't bind (only 3 tracked in the original).
+        assert_eq!(Key::from_mouse_button(MouseButton::Forward), None);
+        assert_eq!(Key::MouseLeft.mouse_button(), Some(MouseButton::Left));
+    }
+
+    #[test]
+    fn unidentified_physical_key_does_not_bind() {
+        use winit::keyboard::NativeKeyCode;
+        assert_eq!(
+            Key::from_physical_key(PhysicalKey::Unidentified(NativeKeyCode::Unidentified)),
+            None
+        );
     }
 }

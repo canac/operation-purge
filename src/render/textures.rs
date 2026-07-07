@@ -1,46 +1,211 @@
 //! Filename-keyed texture cache, replacing `cTextureManager`
-//! (source-map §3.2). Bodies land at M3.
+//! (source-map §3.2, `cTextureManager.cpp`).
 //!
-//! `image` crate BMP decode (4-bit palettized, NPOT) was spiked at M0
-//! (task instructions); `GL_REPEAT` wrap is mandatory (building UV =
-//! length/textureSize) and `processNoAlpha` force-opaque is preserved
-//! for textures the original loaded without an alpha channel.
+//! BMP decode goes through the `image` crate (4-bit palettized incl. the
+//! NPOT `Camo big.bmp` — proven at the M0 spike). `processNoAlpha` forces
+//! the texture fully opaque (the original passed `D3DFMT_X8R8G8B8`,
+//! `cTextureManager.cpp:68`); `processUseAlpha` keeps the source alpha (the
+//! shipped BMPs carry none, so both modes yield opaque RGBA — but the
+//! distinction is preserved for parity). The luminance-to-alpha mode was
+//! dead code in the original (commented out) and is not ported.
+//!
+//! `GL_REPEAT` wrap is mandatory (building UV = length/textureSize) and
+//! `GL_LINEAR`/`GL_LINEAR_MIPMAP_LINEAR` filtering matches the D3D sampler
+//! state (design §3.5). Decode is a pure CPU function (unit-tested against
+//! known pixel colors for all three shipped BMPs); GL upload is compiled but
+//! exercised only at runtime.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
+use glow::HasContext;
+
+use crate::error::GlError;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ProcessMode {
-    /// Force fully opaque, even if the source has an alpha channel.
+    /// Force fully opaque, even if the source has an alpha channel
+    /// (`D3DFMT_X8R8G8B8`).
     NoAlpha,
-    /// Keep the source alpha channel.
+    /// Keep the source alpha channel (`D3DFMT_A8R8G8B8`).
     UseAlpha,
 }
 
-/// Opaque GL texture handle (once M3 wires up `glow`).
+/// A decoded, CPU-side image: tightly packed RGBA8, top row first (the
+/// `image` crate's orientation, matching GL's expectation once we treat row
+/// 0 as the top). NPOT sizes are legal (design §3.5, `GL_REPEAT`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecodedImage {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+impl DecodedImage {
+    /// Pixel at `(x, y)` as `(r, g, b, a)` — test helper.
+    pub fn pixel(&self, x: u32, y: u32) -> (u8, u8, u8, u8) {
+        let i = ((y * self.width + x) * 4) as usize;
+        (
+            self.rgba[i],
+            self.rgba[i + 1],
+            self.rgba[i + 2],
+            self.rgba[i + 3],
+        )
+    }
+}
+
+/// Decode BMP bytes to RGBA8, applying `mode`'s alpha policy. Pure — no GL.
+pub fn decode_bmp(bytes: &[u8], mode: ProcessMode) -> Result<DecodedImage, String> {
+    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Bmp)
+        .map_err(|e| format!("BMP decode failed: {e}"))?;
+    let mut rgba = img.to_rgba8();
+    if mode == ProcessMode::NoAlpha {
+        // processNoAlpha: force every texel opaque (X8R8G8B8).
+        for px in rgba.chunks_exact_mut(4) {
+            px[3] = 0xFF;
+        }
+    }
+    Ok(DecodedImage {
+        width: rgba.width(),
+        height: rgba.height(),
+        rgba: rgba.into_raw(),
+    })
+}
+
+/// A GL texture handle plus its dimensions.
 pub struct Texture {
     pub width: u32,
     pub height: u32,
+    pub handle: glow::Texture,
+}
+
+impl Texture {
+    /// Uploads a decoded image as a mipmapped, `GL_REPEAT`, trilinear-filtered
+    /// 2D texture (design §3.5). Runtime-only (needs a current context).
+    pub fn upload(gl: &glow::Context, image: &DecodedImage) -> Result<Texture, GlError> {
+        unsafe {
+            let handle = gl
+                .create_texture()
+                .map_err(|e| GlError::Context(format!("glGenTextures failed: {e}")))?;
+            gl.bind_texture(glow::TEXTURE_2D, Some(handle));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA8 as i32,
+                image.width as i32,
+                image.height as i32,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(Some(&image.rgba)),
+            );
+            gl.generate_mipmap(glow::TEXTURE_2D);
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::LINEAR_MIPMAP_LINEAR as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::LINEAR as i32,
+            );
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+            Ok(Texture {
+                width: image.width,
+                height: image.height,
+                handle,
+            })
+        }
+    }
 }
 
 /// Global, filename-keyed cache (replacing the original's shared
-/// non-refcounted global pointer cache, source-map §3.2).
-#[derive(Default)]
+/// non-refcounted global pointer cache, source-map §3.2). Owns the shared
+/// context so `load` can upload on cache misses.
 pub struct TextureManager {
-    // Read once `load()` grows a real body at M3 — until then this is
-    // write-only, which trips `dead_code`; silenced rather than removed
-    // since the field is exactly what M3 needs.
-    #[allow(dead_code)]
+    gl: Rc<glow::Context>,
     cache: HashMap<PathBuf, Texture>,
 }
 
 impl TextureManager {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(gl: Rc<glow::Context>) -> Self {
+        Self {
+            gl,
+            cache: HashMap::new(),
+        }
     }
 
-    /// Loads (or returns the cached) texture at `path`, with a full mip
-    /// chain and `GL_REPEAT` wrap. Body lands at M3.
-    pub fn load(&mut self, _path: &std::path::Path, _mode: ProcessMode) -> &Texture {
-        todo!("ported at M3 — image-crate BMP decode + GL upload (design §3.1, §4.6)")
+    /// Loads (or returns the cached) texture at `path`. On a miss, reads the
+    /// file, decodes per `mode`, and uploads a full mip chain. Runtime-only.
+    pub fn load(&mut self, path: &Path, mode: ProcessMode) -> Result<&Texture, GlError> {
+        if !self.cache.contains_key(path) {
+            let bytes = std::fs::read(path)
+                .map_err(|e| GlError::Context(format!("cannot read {}: {e}", path.display())))?;
+            let image = decode_bmp(&bytes, mode)
+                .map_err(|e| GlError::Context(format!("{}: {e}", path.display())))?;
+            let texture = Texture::upload(&self.gl, &image)?;
+            self.cache.insert(path.to_path_buf(), texture);
+        }
+        Ok(&self.cache[path])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn texture_path(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/Textures")
+            .join(name)
+    }
+
+    fn decode_file(name: &str, mode: ProcessMode) -> DecodedImage {
+        let bytes = std::fs::read(texture_path(name)).expect("texture file readable");
+        decode_bmp(&bytes, mode).expect("BMP decodes")
+    }
+
+    #[test]
+    fn steel_bmp_decodes_to_known_pixels() {
+        let img = decode_file("Steel.bmp", ProcessMode::NoAlpha);
+        assert_eq!((img.width, img.height), (32, 32));
+        assert_eq!(img.rgba.len(), 32 * 32 * 4);
+        assert_eq!(img.pixel(0, 0), (132, 132, 132, 255));
+        assert_eq!(img.pixel(0, 31), (198, 198, 198, 255));
+        assert_eq!(img.pixel(16, 16), (132, 132, 132, 255));
+    }
+
+    #[test]
+    fn screw_bmp_decodes_to_known_pixels() {
+        let img = decode_file("Screw.bmp", ProcessMode::NoAlpha);
+        assert_eq!((img.width, img.height), (15, 15));
+        assert_eq!(img.pixel(0, 0), (255, 255, 255, 255));
+        assert_eq!(img.pixel(7, 7), (90, 90, 90, 255));
+    }
+
+    #[test]
+    fn camo_big_bmp_is_npot_and_decodes_to_known_pixels() {
+        // NPOT (103x115) — proven decodable at the M0 spike; GL_REPEAT makes
+        // NPOT legal in core profile.
+        let img = decode_file("Camo big.bmp", ProcessMode::NoAlpha);
+        assert_eq!((img.width, img.height), (103, 115));
+        assert_eq!(img.pixel(0, 0), (82, 49, 0, 255));
+        assert_eq!(img.pixel(102, 0), (165, 99, 0, 255));
+        assert_eq!(img.pixel(51, 57), (0, 66, 0, 255));
+    }
+
+    #[test]
+    fn no_alpha_forces_every_texel_opaque() {
+        let img = decode_file("Steel.bmp", ProcessMode::NoAlpha);
+        assert!(img.rgba.chunks_exact(4).all(|p| p[3] == 0xFF));
+    }
+
+    #[test]
+    fn garbage_bytes_are_a_clean_error_not_a_panic() {
+        assert!(decode_bmp(b"not a bmp at all", ProcessMode::NoAlpha).is_err());
     }
 }

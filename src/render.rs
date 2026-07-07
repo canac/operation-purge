@@ -4,6 +4,7 @@
 //! reached (design §7 M0/M4).
 
 pub mod building3d;
+pub mod camera;
 pub mod center3d;
 pub mod d3dx;
 pub mod gl;
