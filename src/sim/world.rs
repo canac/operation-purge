@@ -381,47 +381,70 @@ impl World {
         }
 
         for (owner, req) in requests {
-            let idx = req.projectile_type.get() as usize;
-            let (initial_speed, fire_effect, travel_effect) = {
-                let pt = &self.game_data.projectile_types[idx];
-                (pt.initial_speed, pt.fire_effect, pt.travel_effect)
-            };
-            let mut proj = Projectile::new(
+            self.add_projectile(
                 req.projectile_type,
                 Some(owner),
                 req.position,
                 req.speed,
                 req.theta,
                 req.phi,
-                initial_speed,
             );
-            // M9: fire effect — a static burst at the muzzle carrying the
-            // muzzle velocity (so a relative emit cone points down-barrel).
-            if let Some(def) = fire_effect {
-                let eff = ParticleEffect::new(
-                    &self.game_data,
-                    def,
-                    false,
-                    proj.position,
-                    proj.velocity,
-                    &mut self.rng,
-                );
-                self.effects.push(eff);
-            }
-            // M9: travel effect — a dynamic trail that follows the projectile
-            // (never self-prunes; dropped with the projectile on destroy).
-            if let Some(def) = travel_effect {
-                proj.travel_effect = Some(ParticleEffect::new(
-                    &self.game_data,
-                    def,
-                    true,
-                    proj.position,
-                    proj.velocity,
-                    &mut self.rng,
-                ));
-            }
-            self.projectiles.push(proj);
         }
+    }
+
+    /// PARITY: `cOperationPurge::AddProjectile` (`cOperationPurge.cpp:1424+`) —
+    /// spawn one projectile (with its fire/travel particle effects) into the
+    /// world. `owner = None` is the observer-point cheat-fire case
+    /// (`cOperationPurge.cpp:1211-1218`), where no robot owns the shot.
+    pub fn add_projectile(
+        &mut self,
+        projectile_type: crate::ids::ProjectileTypeId,
+        owner: Option<RobotId>,
+        position: Vec3,
+        speed: f32,
+        theta: f32,
+        phi: f32,
+    ) {
+        let idx = projectile_type.get() as usize;
+        let (initial_speed, fire_effect, travel_effect) = {
+            let pt = &self.game_data.projectile_types[idx];
+            (pt.initial_speed, pt.fire_effect, pt.travel_effect)
+        };
+        let mut proj = Projectile::new(
+            projectile_type,
+            owner,
+            position,
+            speed,
+            theta,
+            phi,
+            initial_speed,
+        );
+        // M9: fire effect — a static burst at the muzzle carrying the
+        // muzzle velocity (so a relative emit cone points down-barrel).
+        if let Some(def) = fire_effect {
+            let eff = ParticleEffect::new(
+                &self.game_data,
+                def,
+                false,
+                proj.position,
+                proj.velocity,
+                &mut self.rng,
+            );
+            self.effects.push(eff);
+        }
+        // M9: travel effect — a dynamic trail that follows the projectile
+        // (never self-prunes; dropped with the projectile on destroy).
+        if let Some(def) = travel_effect {
+            proj.travel_effect = Some(ParticleEffect::new(
+                &self.game_data,
+                def,
+                true,
+                proj.position,
+                proj.velocity,
+                &mut self.rng,
+            ));
+        }
+        self.projectiles.push(proj);
     }
 
     /// PARITY: `cOperationPurge::TestCollisions` (`cOperationPurge.cpp:804-865`)

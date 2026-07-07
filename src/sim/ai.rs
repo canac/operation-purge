@@ -225,6 +225,20 @@ impl CenterView {
 /// (`cOperationPurge.cpp` sim half): AI decisions run before projectile/
 /// transfer resolution, which the frozen `frame()` also does.
 pub fn run_ai(world: &mut World, dt: f32) {
+    run_ai_except(world, dt, None);
+}
+
+/// Like [`run_ai`], but skips the AI *decision* for `skip` — the
+/// player-possessed robot (design §5.1/§5.5, M8). PARITY:
+/// `cOperationPurge::MoveObjects` drives the active robot with
+/// `CalcNewPosition` (player input) instead of `CalcNewPositionAI` when
+/// `itRobot->first == m_idActiveRobot && m_ObserverType != observerAIRobot`
+/// (`cOperationPurge.cpp:631-637,660-666`). The skipped robot still gets its
+/// `AiRuntime` created (its ctor RNG draws happen at spawn regardless) but no
+/// per-frame AI decision runs and no `RobotInput` is written for it, so the
+/// player's input set by `game::Game::execute_commands` survives into
+/// `World::frame`.
+pub fn run_ai_except(world: &mut World, dt: f32, skip: Option<RobotId>) {
     ensure_ai(world);
 
     // Snapshot the world (immutable) before mutating individual robots.
@@ -265,6 +279,11 @@ pub fn run_ai(world: &mut World, dt: f32) {
     let projectile_types = &world.game_data.projectile_types;
 
     for id in ids {
+        // The player-possessed robot is driven by `RobotInput` from
+        // `execute_commands`, not by the AI (design §5.5, M8).
+        if Some(id) == skip {
+            continue;
+        }
         // Skip (defensive) if the entities vanished.
         if !world.robots.contains_key(&id) || !world.ai.contains_key(&id) {
             continue;

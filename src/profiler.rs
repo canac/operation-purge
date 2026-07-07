@@ -334,6 +334,32 @@ pub fn dump() -> String {
     with_profiler(|p| p.dump())
 }
 
+/// The exit-dump destination (`Profile output.txt`). The original wrote it
+/// to the install dir; the port moves it to `data_local_dir` alongside
+/// `Logfile.txt` (design §4.6, broken-under-UAC deviation).
+pub fn exit_dump_path() -> std::path::PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("operation-purge")
+        .join("Profile output.txt")
+}
+
+/// Write the global profile tree to `Profile output.txt` on exit
+/// (PARITY: `cMainWindow` dumped the profile on shutdown, design §5.3, §1.4.8).
+/// Only writes when the profiler has actually recorded something (an empty
+/// run leaves no file, mirroring the lazy `Logfile.txt`).
+pub fn write_exit_dump() -> std::io::Result<()> {
+    let has_data = with_profiler(|p| !p.root().children.is_empty());
+    if !has_data {
+        return Ok(());
+    }
+    let path = exit_dump_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, dump())
+}
+
 /// RAII scope guard — the Rust analog of the `PROFILE("name")` macro used
 /// at ~25 sites in `cOperationPurge.cpp` (libs-map §1.8). Enters a scope in
 /// the global [`PROFILER`] on construction and closes it on drop.

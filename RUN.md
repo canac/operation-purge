@@ -1,17 +1,128 @@
-# Running Operation Purge (milestones M4 winding gate + M5 static scene)
+# Running Operation Purge (M11 — full game flow)
 
 The port is developed and tested **headless** (no display server), so all
 CPU-side logic is covered by `cargo test`. The window, GL context, shaders,
-and 3D building can only be exercised at a real desktop. This note explains
-how to launch the M4 debug view and how to sign off the winding/culling
-checklist.
+audio device, and the play/feel/visual behaviour can only be exercised at a
+real desktop. As of **M11** `cargo run` launches the **full flow**: the app
+opens on the in-engine **New Game screen** (maze pattern + live match count,
+Game/Team combos, password), and OK spawns the world and drops onto the 2D
+map → possess a robot → fight the AI in 3D → win/lose/draw pops a
+**GameOver modal** (replay / new game / keep watching) → quit via the
+EndGame confirm. This note explains how to launch it, what to eyeball, and
+(further down) the retained M4/M5 winding + lighting sign-off notes.
 
 ## Build & test (any machine, no display needed)
 
 ```sh
-cargo build --all-targets     # compiles all winit/glutin/glow/ab_glyph usage
+cargo build --all-targets     # compiles all winit/glutin/glow/kira/ab_glyph usage
 cargo test                    # all tests green (CPU-side logic only)
 ```
+
+## M11 — the full flow (needs a real display + audio device)
+
+```sh
+cargo run                     # or: cargo run --release
+cargo run -- --assets ./assets --seed 12345
+```
+
+The app opens borderless fullscreen on the **New Game screen** (design §5.5):
+the maze **pattern** field (default `MazeFiles/*.maz`, seeded from
+`config.toml`) shows a live "Pattern matches N files" count recomputed by the
+legacy wildcard matcher on every edit; `Tab` switches between the pattern and
+password fields; `Left`/`Right` cycle the **Game** combo (`Shift`+`Left`/
+`Right` cycle **Team**); `Enter` = OK, `Esc` = Cancel. **An empty password
+enables cheats** (PARITY, design §1.3). OK random-picks a matching maze,
+persists the selection to `config.toml`, spawns the world, and drops onto the
+**2D map** with the game **paused** (speed 0.0). Cancel **at startup quits**;
+Cancel **mid-game resumes** the paused game.
+
+The frame pump is `app::AppRunner::pump` (design §5.1): `dt = min(now−last,
+1 s)`, `Game::execute_commands` runs **every** frame, `Game::advance` runs
+only while focused (focus loss clears input + freezes the sim). The New Game
+screen and all modals freeze the game.
+
+### Controls (the bound keys come from `[ui].commands` in `GameData.toml`)
+
+| Where | Action | Default command |
+|---|---|---|
+| 2D map | select a friendly (white) robot under the cursor | `SelectObserverRobot` |
+| 2D map | **possess** the selected robot → enter 3D | `SetObserver` |
+| 2D map | cancel back to 3D (disabled when forced by death) | `Exit2DMode` |
+| 3D | accelerate / decelerate; no key = cruise | `Accelerate` / `Decelerate` |
+| 3D | turn / elevate barrel | mouse X / mouse Y |
+| 3D | change desired speed | mouse wheel |
+| 3D | fire | `FireProjectiles` (+ per-projectile fire keys) |
+| 3D | speed up / slow down / pause the sim | `IncreaseGameSpeed` / `DecreaseGameSpeed` / `Pause` |
+| 3D | back to the 2D map | `Enter2DMode` |
+| 3D | toggle the minimap / AI mode | `ToggleMap` / `ToggleAIMode` |
+| 3D | **end game** confirm (Yes → New Game) | `EndGame` (`Esc`) |
+| 3D | **restart** confirm (Yes → same game) | `Restart` (`F4`) |
+| observer | fly (fwd/back/strafe/up/down) at 3 speeds | `MoveObserver*` / `MoveObserverSpeed1/2/3` |
+| observer | **cheat fire** (empty-password games only, 0.03 s cooldown) | `FireProjectiles` |
+| modal | Yes / No / Cancel | `Y` / `N` / `C` |
+| profiler | running / visible / interaction | `ToggleProfiler{Running,Visible,Interaction}` (`P`/`[`/`]`) |
+
+### Visual / feel gates to sign off (M8)
+
+1. **Full loop**: start on the 2D map → select + possess a friendly robot →
+   drive/turn/elevate/fire against the AI → get destroyed → the view is
+   **forced back to the 2D map** and cannot be cancelled until you pick a new
+   robot (`forced_by_death`).
+2. **Feel at 60 Hz vsync**: movement/turn/fire feel is frame-rate coupled
+   (variable dt, PARITY). Confirm the game-speed ramp (`T`/`G`) and pause
+   (`Q`) behave; game speed has **no upper bound** and never goes below 0.
+3. **Camera**: possessing poses the eye at the robot's viewpoint offset
+   `(0,0, treadRadius·2)` looking down its barrel (yaw = heading, pitch =
+   barrel elevation); `z_far = min(fMaxVisibleDist, |building|)`.
+4. **HUD** (top-left): the live status block updates every frame — speed,
+   energy/health, per-type reload + ammo, spawned-per-team counts, game
+   speed %, game time, and the conditional lines (AI mode / enemy visible
+   [0.25 s poll] / targeted / above center).
+
+### M11 visual / feel gates to sign off (needs a real display, all 3 OSes)
+
+1. **New Game screen**: launch → the pattern field shows the correct live
+   match count (`MazeFiles/*.maz` ⇒ "matches 4 files"); editing the pattern
+   updates it; `Left`/`Right` cycle Game, `Shift`+arrows cycle Team; typing a
+   password masks with `*`; OK spawns the game, Cancel-at-startup quits.
+2. **Config persistence**: after OK, `config.toml` (in the OS config dir)
+   holds the maze **pattern**, `game_index`, `team_index`; relaunch defaults
+   the New Game screen to those values.
+3. **Cheat polarity**: start a game with an **empty** password → in 3D, `V`
+   (`ToggleAIMode`) lets you take control of an enemy robot, and the free
+   observer can cheat-fire. A **non-empty** password disables both.
+4. **Win / lose / draw modal**: play (or fast-forward with `T`) until a team
+   wins → the GameOver modal appears with the correct text; **all sounds stop
+   the instant it opens**; `Y` replays the same game, `N` pops New Game, `C`
+   keeps watching (modal does not re-open).
+5. **EndGame / Restart confirms**: `Esc` → "quit the current game?" (Yes →
+   New Game, No → resume); `F4` → same prompt (Yes → restart same maze).
+6. **Observer fly**: on the 2D map `Ctrl+click`-place an observer point and
+   possess it → fly with the `MoveObserver*` keys at speeds 1/2/3; pitch
+   clamps at ±π/2; the camera cannot leave the building (0.0001 margin).
+7. **Profiler**: `P` toggles profiling on, `[` shows the tree pane on the
+   right third (game viewport shrinks to ⅔ conceptually), `]` toggles
+   interaction; on **exit** `Profile output.txt` is written to the OS
+   data-local dir (`dirs::data_local_dir()/operation-purge/`).
+
+### Still pending / deferred (not M11)
+
+- **Wall holes at 0.005 offset**, projectile/particle **sprite rendering**,
+  and the **2D top-down map overlay** (incl. arrow-pan / `Ctrl`+arrow resize)
+  are computed by the sim every frame but are not yet drawn — sprite/overlay
+  draw wiring rides on the M5 sprite batcher. The New Game screen, modals, and
+  profiler pane are drawn as **plain overlay text** (top-left / right-third);
+  a boxed dialog layout is cosmetic follow-up.
+- **Per-event 3D sounds** (fire/collision/destroy): clips are preloaded and
+  voice pools registered; the DS3D **listener** (every 10th frame) + **alarm
+  loops** are driven and **stopped before any modal** (design §5.4). Emitting
+  the per-event one-shots needs a World frame-event log (follow-up). Audio is
+  muted automatically if no output device is available.
+- **Internal-error fatal modal**: `ConfirmKind::InternalError` + its resolve
+  path (Yes → exit) exist; wiring the errorlog channel to raise it at runtime
+  is a follow-up (the modal machinery and prompt are in place).
+
+## (Retained) M4/M5 — winding gate + static scene notes
 
 The headless suite covers the M4 correctness proxies: the wall-outline
 tracer and building extrusion (positions / winding order / UVs against a
@@ -19,36 +130,14 @@ hand-computed 1×1 room), the triangle-fan→list conversion, the u16 mesh
 GUARD, the four shader sources' PARITY constants, and the camera MVP
 (including the `z' = 2z - w` clip fixup at the near/far planes).
 
-## Run the M4 debug view (needs a real display)
-
-```sh
-cargo run                     # or: cargo run --release
-cargo run -- --assets ./assets
-```
-
-The app opens **borderless fullscreen** with an OpenGL 3.3 core context
-(macOS negotiates 4.1 core — fine, GLSL stays `#version 330`), compiles the
-four shader programs, loads `assets/MazeFiles/Small1.maz`, extrudes the
-building, and drops a **free-fly debug camera** inside room (0,0). As of M5
-the scene also contains one **procedural robot** (dome + barrel + treads) at
-the room center and one **center marker** one room to its +X, both lit by the
-point-light-at-eye Gouraud shader.
-
-### Controls
-
-| Key | Action |
-|---|---|
-| `W` / `S` | move forward / back |
-| `A` / `D` | strafe left / right |
-| `Space` / `Left Ctrl` | move up / down (world +Z / −Z) |
-| mouse | look (yaw / pitch) |
-| **`C`** | **toggle back-face culling** (starts OFF) |
-| **`F`** | **flip the front face** (`GL_CCW` ↔ `GL_CW`) |
-| **`V`** | **cycle the isolated draw category**: All → Walls → Floor → Ceiling |
-| `Esc` | quit |
-
-The on-screen HUD (top-left) shows the current cull state, front-face
-winding, isolated category, and camera pose.
+> **Note (M8):** the interactive **free-fly debug camera** and its winding
+> keys (`C`/`F`/`V`) have been **removed** — `cargo run` now launches the M8
+> game loop (above). Culling still defaults to `WindingDecision::CullNone`
+> (nothing is culled), so the winding checklist below can still be eyeballed
+> from the possessed-robot camera; the lighting/dimming and UV-tiling checks
+> apply to the live robots + building rendered in that loop. The depth-fixup
+> and winding correctness are pinned by the `render::d3dx` / `render::camera`
+> unit tests regardless.
 
 ## The §3.3 winding / culling checklist
 

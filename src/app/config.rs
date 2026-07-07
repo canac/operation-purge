@@ -94,6 +94,15 @@ impl Config {
         toml::from_str(&text).unwrap_or_default()
     }
 
+    /// Fold an accepted New Game selection into the config (the registry
+    /// `SetData` block, `cMainWindow.cpp:767-776`): the maze **pattern** (not
+    /// the resolved file), game index, and team index are persisted.
+    pub fn apply_new_game(&mut self, params: &crate::game::newgame::NewGameParams) {
+        self.maze_file = params.pattern.clone();
+        self.game_index = params.game_idx;
+        self.team_index = params.team_idx;
+    }
+
     /// Written only on New Game accept (design §5.5), never eagerly.
     pub fn save(&self) -> std::io::Result<()> {
         let Some(path) = Self::path() else {
@@ -143,5 +152,29 @@ mod tests {
         let back: Config = toml::from_str(&text).unwrap();
         assert_eq!(back.seed, Some(12345));
         assert_eq!(back.hud_scale, Some(2.0));
+    }
+
+    #[test]
+    fn apply_new_game_persists_pattern_and_indices() {
+        use crate::game::newgame::NewGameParams;
+        let mut c = Config::default();
+        let params = NewGameParams {
+            maze_path: std::path::PathBuf::from("/tmp/MazeFiles/Small3.maz"),
+            pattern: "MazeFiles/Small*.maz".to_string(),
+            game_idx: 2,
+            team_idx: 1,
+            cheats_enabled: false,
+        };
+        c.apply_new_game(&params);
+        assert_eq!(c.maze_file, "MazeFiles/Small*.maz"); // pattern, not resolved file
+        assert_eq!(c.game_index, 2);
+        assert_eq!(c.team_index, 1);
+
+        // Round-trip: write → read yields the same New Game selection.
+        let text = toml::to_string_pretty(&c).unwrap();
+        let back: Config = toml::from_str(&text).unwrap();
+        assert_eq!(back.maze_file, "MazeFiles/Small*.maz");
+        assert_eq!(back.game_index, 2);
+        assert_eq!(back.team_index, 1);
     }
 }
