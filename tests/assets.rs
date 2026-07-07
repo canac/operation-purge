@@ -74,6 +74,66 @@ fn shipped_maze_files_reload_and_are_bordered() {
     }
 }
 
+/// Every quoted string in `GameData.toml` ending in a known asset extension.
+/// A plain text scan (not a TOML parse) so it is immune to toml-crate API
+/// quirks and catches the filename literals wherever they appear. Asset
+/// filenames contain no escaped quotes, so splitting on `"` and taking the
+/// quoted (odd-index) segments is exact.
+fn gamedata_asset_refs() -> Vec<String> {
+    let text = std::fs::read_to_string(assets_dir().join("GameData.toml"))
+        .expect("assets/GameData.toml must be readable");
+    let mut refs: Vec<String> = text
+        .lines()
+        .flat_map(|line| line.split('"').skip(1).step_by(2))
+        .filter(|s| {
+            let l = s.to_ascii_lowercase();
+            l.ends_with(".wav") || l.ends_with(".bmp") || l.ends_with(".png")
+        })
+        .map(|s| s.to_string())
+        .collect();
+    refs.sort();
+    refs.dedup();
+    refs
+}
+
+/// Regression guard (the bug the M1 conversion left behind): every sound and
+/// texture named in the shipped `GameData.toml` must exist on disk, or the
+/// game logs "could not preload ..." at startup. Sounds live under `Sounds/`,
+/// image textures under `Textures/`.
+#[test]
+fn every_gamedata_asset_reference_exists_on_disk() {
+    let refs = gamedata_asset_refs();
+    assert!(!refs.is_empty(), "expected GameData.toml to reference some assets");
+
+    let sounds = assets_dir().join("Sounds");
+    let textures = assets_dir().join("Textures");
+    let missing: Vec<&String> = refs
+        .iter()
+        .filter(|name| {
+            let is_wav = name.to_ascii_lowercase().ends_with(".wav");
+            let dir = if is_wav { &sounds } else { &textures };
+            !dir.join(name).is_file()
+        })
+        .collect();
+    assert!(missing.is_empty(), "GameData.toml references missing assets: {missing:?}");
+}
+
+#[test]
+fn generated_alarm_wavs_match_the_surviving_format() {
+    // Alarm.wav / FastAlarm.wav are reconstructed by `gen_alarms` (the
+    // originals were lost); they must decode in the same 8-bit mono 22050 Hz
+    // path as the surviving WAVs so the loader treats them identically.
+    let reference = hound::WavReader::open(assets_dir().join("Sounds/MachineGun.wav"))
+        .unwrap()
+        .spec();
+    for name in ["Alarm.wav", "FastAlarm.wav"] {
+        let path = assets_dir().join("Sounds").join(name);
+        let reader =
+            hound::WavReader::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert_eq!(reader.spec(), reference, "{name} format must match MachineGun.wav");
+    }
+}
+
 #[test]
 fn liberation_sans_bold_font_is_present_and_loadable() {
     let path = assets_dir().join("Fonts/LiberationSans-Bold.ttf");

@@ -57,11 +57,11 @@ GameData {
         wall_width: 1.0,
         room_size: 10.0,
         ceiling_height: 5.0,
-        wall_texture: "Brick.bmp",
+        wall_texture: "Camo big.bmp",
         wall_texture_size: 1.0,
         floor_texture: "Steel.bmp",
         floor_texture_size: 0.1,
-        ceiling_texture: "Ceiling.bmp",
+        ceiling_texture: "Screw.bmp",
         ceiling_texture_size: 1.0,
     },
     sounds: SoundsOptions {
@@ -1084,7 +1084,7 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 25.0,
-            destroy_sound: "Destroy.wav",
+            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1125,7 +1125,7 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 25.0,
-            destroy_sound: "Destroy.wav",
+            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1166,7 +1166,7 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 25.0,
-            destroy_sound: "Destroy.wav",
+            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1186,7 +1186,7 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 1.0,
-            destroy_sound: "Destroy.wav",
+            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1206,7 +1206,7 @@ GameData {
             health_start: 50.0,
             projectile_armor: 5.0,
             crash_armor: 25.0,
-            destroy_sound: "Destroy.wav",
+            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1265,8 +1265,8 @@ GameData {
             hole_size: 0.1,
             texture: "Projectile.png",
             hole_texture: "Hole.png",
-            fire_sound: "BulletFire.wav",
-            collision_sound: "BulletCollision.wav",
+            fire_sound: "MachineGun.wav",
+            collision_sound: "Explosion.wav",
             fire_effect: Some(
                 EffectDefId(
                     0,
@@ -1295,8 +1295,8 @@ GameData {
             hole_size: 0.25,
             texture: "",
             hole_texture: "Hole.png",
-            fire_sound: "RocketFire.wav",
-            collision_sound: "RocketCollision.wav",
+            fire_sound: "RocketLaunch.wav",
+            collision_sound: "Explosion.wav",
             fire_effect: None,
             travel_effect: Some(
                 EffectDefId(
@@ -1325,8 +1325,8 @@ GameData {
             hole_size: 0.15,
             texture: "Projectile.png",
             hole_texture: "Hole.png",
-            fire_sound: "BulletFire.wav",
-            collision_sound: "BulletCollision.wav",
+            fire_sound: "MachineGun.wav",
+            collision_sound: "Explosion.wav",
             fire_effect: Some(
                 EffectDefId(
                     0,
