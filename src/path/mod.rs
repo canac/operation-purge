@@ -21,19 +21,15 @@
 //!   [`PathFinder::LOOKAHEAD_CAP`].
 //!
 //! The building-collision helpers (`IntersectRect`/`IntersectMovingRect`,
-//! `cBuilding.cpp`) are re-ported here as [`RoomGraph`] methods: `sim::world`
-//! keeps its own private copies (M6) and this milestone may only touch
-//! `path`/`ai`/`tests`, so the small amount of duplication is deliberate and
-//! each copy carries the same `cBuilding` citation.
+//! `cBuilding.cpp`) live once on [`crate::maze::building::Building`];
+//! [`RoomGraph`] borrows a `&Building` and delegates to them (the room graph
+//! only adds the pathfinding-specific room/corner adjacency on top).
 
 pub mod astar;
 pub mod nodes;
 
-use crate::maze::Maze;
-use crate::math::floor_i32;
-use crate::math::intersect::{
-    moving_rect_rect, no_intersection_2d, rect_rect, Intersection2D, MovingRect, Rect,
-};
+use crate::maze::building::{Building, WallDir};
+use crate::math::intersect::{MovingRect, Rect};
 use astar::AStar;
 use glam::Vec2;
 
@@ -52,55 +48,27 @@ impl PathFinder {
     pub const LOOKAHEAD_CAP: usize = 2;
 }
 
-/// Which of the two wall directions a wall runs along (`eWallDirection`,
-/// `cMaze.h`): `X` = horizontal (top edge of a room), `Y` = vertical (left
-/// edge). Matches `sim::world`'s private `WallDir`.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-enum WallDir {
-    X,
-    Y,
-}
-
-/// The building's room graph + world scale, exposing exactly the queries
-/// `cHighLevel`/`cLowLevel`/`cPathFinder` needed: room membership, wall
-/// adjacency, and rect/moving-rect-vs-building intersection.
+/// The building's room graph: borrows a [`Building`] (for its maze, world
+/// scale, and wall-collision queries) and adds the room/corner adjacency the
+/// `cHighLevel`/`cLowLevel` pathfinders needed.
 ///
-/// PARITY note: `room_size`/`wall_width` are the *building* constants
-/// (`cBuilding::m_fRoomSize`/`m_fWallWidth`); the AI's per-robot
-/// `fMinWallDist` (`wall_dist`) and footprint (`size`) are passed per call,
-/// exactly as `cPathFinder::m_fWallDist`/`m_size2Size` were set per
-/// `FindPath` (`cPathFinder.cpp:166-167,182-183`).
+/// PARITY note: the AI's per-robot `fMinWallDist` (`wall_dist`) and footprint
+/// (`size`) are passed per call, exactly as `cPathFinder::m_fWallDist` /
+/// `m_size2Size` were set per `FindPath` (`cPathFinder.cpp:166-167,182-183`).
 pub struct RoomGraph<'a> {
-    pub maze: &'a Maze,
-    pub room_size: f32,
-    pub wall_width: f32,
+    pub building: &'a Building,
 }
 
 impl<'a> RoomGraph<'a> {
-    pub fn new(maze: &'a Maze, room_size: f32, wall_width: f32) -> Self {
-        Self {
-            maze,
-            room_size,
-            wall_width,
-        }
+    pub fn new(building: &'a Building) -> Self {
+        Self { building }
     }
 
     /// `cBuilding::IsSameRoom` (`cBuilding.cpp:89-93`): `(int) (x/rs)`
     /// truncation-toward-zero per axis (C `(int)` cast == Rust `as i32`).
     pub fn is_same_room(&self, a: Vec2, b: Vec2) -> bool {
-        (a.x / self.room_size) as i32 == (b.x / self.room_size) as i32
-            && (a.y / self.room_size) as i32 == (b.y / self.room_size) as i32
-    }
-
-    /// `GetWall(x, y, dir)` via the maze accessor (`cMaze::GetSurroundingWalls`
-    /// semantics): `WallDir::X` = top edge = `surrounding_walls[0]`;
-    /// `WallDir::Y` = left edge = `surrounding_walls[2]`.
-    fn get_wall(&self, x: i32, y: i32, dir: WallDir) -> bool {
-        let sw = self.maze.surrounding_walls(x, y);
-        match dir {
-            WallDir::X => sw[0],
-            WallDir::Y => sw[2],
-        }
+        let rs = self.building.room_size;
+        (a.x / rs) as i32 == (b.x / rs) as i32 && (a.y / rs) as i32 == (b.y / rs) as i32
     }
 
     /// `cBuilding::GetSurroundingWalls`→`cMaze::GetSurroundingWalls`
@@ -108,151 +76,33 @@ impl<'a> RoomGraph<'a> {
     /// `[Up, Left, Down, Right]` (NOT the maze accessor's
     /// `[Up, Down, Left, Right]`).
     fn surrounding_walls_dir(&self, p: Vec2) -> [bool; 4] {
-        let x = (p.x / self.room_size) as i32;
-        let y = (p.y / self.room_size) as i32;
+        let rs = self.building.room_size;
+        let x = (p.x / rs) as i32;
+        let y = (p.y / rs) as i32;
         [
-            self.get_wall(x, y, WallDir::X),     // Up      = h(x,y)
-            self.get_wall(x, y, WallDir::Y),     // Left    = v(x,y)
-            self.get_wall(x, y + 1, WallDir::X), // Down    = h(x,y+1)
-            self.get_wall(x + 1, y, WallDir::Y), // Right   = v(x+1,y)
+            self.building.wall_at(WallDir::X, x, y),     // Up    = h(x,y)
+            self.building.wall_at(WallDir::Y, x, y),     // Left  = v(x,y)
+            self.building.wall_at(WallDir::X, x, y + 1), // Down  = h(x,y+1)
+            self.building.wall_at(WallDir::Y, x + 1, y), // Right = v(x+1,y)
         ]
     }
 
     /// `cMaze::GetWallCorners` (`cMaze.cpp:316-322`), returned in `eCorner`
     /// order `[TopLeft, TopRight, BottomLeft, BottomRight]`.
     fn wall_corners(&self, p: Vec2) -> [bool; 4] {
-        let x = (p.x / self.room_size) as i32;
-        let y = (p.y / self.room_size) as i32;
+        let rs = self.building.room_size;
+        let x = (p.x / rs) as i32;
+        let y = (p.y / rs) as i32;
         [
             // TL
-            self.get_wall(x - 1, y, WallDir::X) || self.get_wall(x, y - 1, WallDir::Y),
+            self.building.wall_at(WallDir::X, x - 1, y) || self.building.wall_at(WallDir::Y, x, y - 1),
             // TR
-            self.get_wall(x + 1, y, WallDir::X) || self.get_wall(x + 1, y - 1, WallDir::Y),
+            self.building.wall_at(WallDir::X, x + 1, y) || self.building.wall_at(WallDir::Y, x + 1, y - 1),
             // BL
-            self.get_wall(x - 1, y + 1, WallDir::X) || self.get_wall(x, y + 1, WallDir::Y),
+            self.building.wall_at(WallDir::X, x - 1, y + 1) || self.building.wall_at(WallDir::Y, x, y + 1),
             // BR
-            self.get_wall(x + 1, y + 1, WallDir::X) || self.get_wall(x + 1, y + 1, WallDir::Y),
+            self.building.wall_at(WallDir::X, x + 1, y + 1) || self.building.wall_at(WallDir::Y, x + 1, y + 1),
         ]
-    }
-
-    /// `cBuilding::WallToRect` (`cBuilding.cpp:96-119`).
-    fn wall_to_rect(&self, dir: WallDir, x: i32, y: i32) -> Rect {
-        let rs = self.room_size;
-        let ww = self.wall_width;
-        match dir {
-            WallDir::X => Rect {
-                center: Vec2::new((x as f32 + 0.5) * rs, y as f32 * rs),
-                size: Vec2::new(rs + ww, ww),
-            },
-            WallDir::Y => Rect {
-                center: Vec2::new(x as f32 * rs, (y as f32 + 0.5) * rs),
-                size: Vec2::new(ww, rs + ww),
-            },
-        }
-    }
-
-    /// PARITY: `cBuilding::IntersectRect` (`cBuilding.cpp:164-208`) —
-    /// static rect-vs-wall test. Preserves the quirk of using `size.y` for
-    /// BOTH axis bounds (`cBuilding.cpp:170-173`; harmless for the square
-    /// robot footprints these paths use).
-    pub fn intersect_rect(&self, rc: Rect) -> bool {
-        let recip = 1.0 / self.room_size;
-        let size_y = (rc.size.y + self.wall_width) * 0.5;
-        let iwx1 = floor_i32((rc.center.x - size_y) * recip);
-        let iwy1 = floor_i32((rc.center.y - size_y) * recip);
-        let iwx2 = floor_i32((rc.center.x + size_y) * recip);
-        let iwy2 = floor_i32((rc.center.y + size_y) * recip);
-
-        for y in (iwy1 + 1).max(0)..=iwy2 {
-            for x in iwx1.max(0)..=iwx2 {
-                if self.get_wall(x, y, WallDir::X) && rect_rect(rc, self.wall_to_rect(WallDir::X, x, y))
-                {
-                    return true;
-                }
-            }
-        }
-        for y in iwy1.max(0)..=iwy2 {
-            for x in (iwx1 + 1).max(0)..=iwx2 {
-                if self.get_wall(x, y, WallDir::Y) && rect_rect(rc, self.wall_to_rect(WallDir::Y, x, y))
-                {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    /// PARITY: `cBuilding::IntersectMovingRect` → `GetIntersectedWalls`
-    /// (`cBuilding.cpp:211-216`) with `pntr` set / `pvWalls` null
-    /// (`bFindAll = true`): earliest-time wall intersection.
-    pub fn intersect_moving_rect(&self, mrc: MovingRect) -> Intersection2D {
-        let mut ntr = no_intersection_2d();
-        self.get_intersected_walls_portion(mrc, &mut ntr, 0);
-        ntr
-    }
-
-    /// PARITY: `cBuilding::GetIntersectedWallsPortion`
-    /// (`cBuilding.cpp:467-602`) with `bFindAll = true`, ntr-only (the
-    /// pathfinder never asks for the wall list): recurse-quarter until the
-    /// swept span fits one room row/column or depth 3, then test each
-    /// candidate wall and keep the earliest-time hit.
-    fn get_intersected_walls_portion(
-        &self,
-        mrc: MovingRect,
-        ntr: &mut Intersection2D,
-        level: u32,
-    ) {
-        let offset_x = (mrc.size.x + self.wall_width) * 0.5;
-        let offset_y = (mrc.size.y + self.wall_width) * 0.5;
-        let recip = 1.0 / self.room_size;
-        let fwx1 = (mrc.center1.x.min(mrc.center2.x) - offset_x) * recip;
-        let fwy1 = (mrc.center1.y.min(mrc.center2.y) - offset_y) * recip;
-        let fwx2 = (mrc.center1.x.max(mrc.center2.x) + offset_x) * recip;
-        let fwy2 = (mrc.center1.y.max(mrc.center2.y) + offset_y) * recip;
-        let iwx1 = floor_i32(fwx1);
-        let iwy1 = floor_i32(fwy1);
-        let iwx2 = floor_i32(fwx2);
-        let iwy2 = floor_i32(fwy2);
-
-        if iwx1 == iwx2 || iwy1 == iwy2 || level > 3 {
-            let cx = self.maze.cx;
-            let cy = self.maze.cy;
-            if iwx1 >= cx || iwx2 < 0 || iwy1 >= cy || iwy2 < 0 {
-                return;
-            }
-
-            for y in (iwy1 + 1)..=iwy2 {
-                for x in iwx1..=iwx2 {
-                    if self.get_wall(x, y, WallDir::X) {
-                        let n = moving_rect_rect(mrc, self.wall_to_rect(WallDir::X, x, y));
-                        if n.hit && n.time < ntr.time {
-                            *ntr = n;
-                        }
-                    }
-                }
-            }
-            for y in iwy1..=iwy2 {
-                for x in (iwx1 + 1)..=iwx2 {
-                    if self.get_wall(x, y, WallDir::Y) {
-                        let n = moving_rect_rect(mrc, self.wall_to_rect(WallDir::Y, x, y));
-                        if n.hit && n.time < ntr.time {
-                            *ntr = n;
-                        }
-                    }
-                }
-            }
-        } else {
-            let movement = mrc.center2 - mrc.center1;
-            for (a, b) in [(0.0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.0)] {
-                let sub = MovingRect {
-                    center1: mrc.center1 + movement * a,
-                    center2: mrc.center1 + movement * b,
-                    size: mrc.size,
-                    stop_time: mrc.stop_time,
-                };
-                self.get_intersected_walls_portion(sub, ntr, level + 1);
-            }
-        }
     }
 
     /// PARITY: `cPathFinder::IsPointVisible` (`cPathFinder.cpp:373-401`).
@@ -260,16 +110,10 @@ impl<'a> RoomGraph<'a> {
     /// cross-room = the swept footprint clears the building.
     pub fn is_point_visible(&self, size: Vec2, p1: Vec2, p2: Vec2) -> bool {
         if self.is_same_room(p1, p2) {
-            if self.intersect_rect(Rect {
-                center: p1,
-                size,
-            }) {
+            if self.building.intersect_rect(Rect { center: p1, size }) {
                 return false;
             }
-            if self.intersect_rect(Rect {
-                center: p2,
-                size,
-            }) {
+            if self.building.intersect_rect(Rect { center: p2, size }) {
                 return false;
             }
             return true;
@@ -280,7 +124,7 @@ impl<'a> RoomGraph<'a> {
             size,
             stop_time: 1.0,
         };
-        !self.intersect_moving_rect(mrc).hit
+        !self.building.intersect_moving_rect(mrc).hit
     }
 
     // ---------------- high-level (room graph) ----------------
@@ -288,7 +132,7 @@ impl<'a> RoomGraph<'a> {
     /// PARITY: `cHighLevelPathFinder::GetNeighbors` (`cPathFinder.cpp:454-480`).
     /// Offsets in `eDirection` order; a neighbor across a wall is dropped.
     fn high_level_neighbors(&self, p: Vec2) -> Vec<Vec2> {
-        let rs = self.room_size;
+        let rs = self.building.room_size;
         let offsets = [
             Vec2::new(0.0, -rs), // Up
             Vec2::new(-rs, 0.0), // Left
@@ -315,7 +159,7 @@ impl<'a> RoomGraph<'a> {
     /// unwalled neighbor room plus the current room, gated by the margin/
     /// wall-corner visibility test.
     fn low_level_neighbors(&self, p: Vec2, wall_dist: f32, size: Vec2) -> Vec<Vec2> {
-        let rs = self.room_size;
+        let rs = self.building.room_size;
         let wd = wall_dist;
         // eCorner order: TL, TR, BL, BR.
         let room_offsets = [
@@ -422,6 +266,18 @@ pub fn find_low_level_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::maze::Maze;
+
+    /// Wrap a test maze in a `Building` with the standard test scale
+    /// (`room_size = 10`, `wall_width = 1`) so a `RoomGraph` can borrow it.
+    fn test_building(maze: Maze) -> Building {
+        Building {
+            maze,
+            wall_width: 1.0,
+            room_size: 10.0,
+            ceiling_height: 5.0,
+        }
+    }
 
     /// A fully-connected `cx x cy` maze with only the outer border walled
     /// (a "perfect open field"): every interior room is reachable from every
@@ -448,8 +304,8 @@ mod tests {
         path.iter()
             .map(|p| {
                 (
-                    (p.x / graph.room_size) as i32,
-                    (p.y / graph.room_size) as i32,
+                    (p.x / graph.building.room_size) as i32,
+                    (p.y / graph.building.room_size) as i32,
                 )
             })
             .collect()
@@ -463,7 +319,8 @@ mod tests {
     #[test]
     fn high_level_room_sequence_matches_hand_trace_4x4() {
         let maze = open_bordered(4, 4);
-        let graph = RoomGraph::new(&maze, 10.0, 1.0);
+        let building = test_building(maze);
+        let graph = RoomGraph::new(&building);
         let start = room_center(0, 0, 10.0);
         let goal = room_center(3, 0, 10.0);
         let path = find_high_level_path(&graph, start, goal).expect("path");
@@ -477,7 +334,8 @@ mod tests {
     #[test]
     fn high_level_preserves_in_room_offset() {
         let maze = open_bordered(4, 4);
-        let graph = RoomGraph::new(&maze, 10.0, 1.0);
+        let building = test_building(maze);
+        let graph = RoomGraph::new(&building);
         // Start off-center within room (0,0).
         let start = Vec2::new(2.0, 3.0);
         let goal = room_center(2, 2, 10.0);
@@ -502,7 +360,8 @@ mod tests {
         let mut maze = open_bordered(3, 3);
         // Close the vertical wall on the left edge of room (1,0) = v(1,0).
         maze.v_walls[0 * (3 + 1) + 1] = true;
-        let graph = RoomGraph::new(&maze, 10.0, 1.0);
+        let building = test_building(maze);
+        let graph = RoomGraph::new(&building);
         let start = room_center(0, 0, 10.0);
         let goal = room_center(1, 0, 10.0);
         let path = find_high_level_path(&graph, start, goal).expect("path");
@@ -516,7 +375,8 @@ mod tests {
     #[test]
     fn low_level_same_room_start_reaches_visible_goal() {
         let maze = open_bordered(2, 2);
-        let graph = RoomGraph::new(&maze, 10.0, 1.0);
+        let building = test_building(maze);
+        let graph = RoomGraph::new(&building);
         let start = room_center(0, 0, 10.0);
         let goal = room_center(0, 0, 10.0);
         let size = Vec2::new(1.6, 1.6);
@@ -533,7 +393,8 @@ mod tests {
         let mut maze = open_bordered(2, 2);
         // Wall on the left edge of room (1,0).
         maze.v_walls[0 * (2 + 1) + 1] = true;
-        let graph = RoomGraph::new(&maze, 10.0, 1.0);
+        let building = test_building(maze);
+        let graph = RoomGraph::new(&building);
         let size = Vec2::new(1.6, 1.6);
         let a = room_center(0, 0, 10.0);
         let b = room_center(1, 0, 10.0);
@@ -543,7 +404,8 @@ mod tests {
     #[test]
     fn is_point_visible_clear_across_open_rooms() {
         let maze = open_bordered(2, 2);
-        let graph = RoomGraph::new(&maze, 10.0, 1.0);
+        let building = test_building(maze);
+        let graph = RoomGraph::new(&building);
         let size = Vec2::new(1.6, 1.6);
         let a = room_center(0, 0, 10.0);
         let b = room_center(1, 0, 10.0);

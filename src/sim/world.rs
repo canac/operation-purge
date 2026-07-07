@@ -25,12 +25,8 @@
 
 use crate::data::{GameData, RobotType};
 use crate::ids::{CenterId, EffectDefId, GameDefId, RobotId, TeamId};
-use crate::maze::building::Building;
-use crate::math::floor_i32;
-use crate::math::intersect::{
-    moving_rect_rect, no_intersection_2d, no_intersection_3d, rect_rect, trajectory_box,
-    trajectory_plane, Box3, Intersection2D, Intersection3D, MovingRect, Plane3D, PlaneAxis, Rect,
-};
+use crate::maze::building::{Building, WallDir};
+use crate::math::intersect::{rect_rect, Rect};
 use crate::rng::GameRng;
 use crate::sim::ai::AiRuntime;
 use crate::sim::center::{Center, CenterKind, Orientation};
@@ -79,15 +75,6 @@ impl Default for RobotInput {
             fire: false,
         }
     }
-}
-
-/// Which of the two wall directions a wall runs along (`eWallDirection`,
-/// `cMaze.h`). `X` = horizontal (top/bottom room edge), `Y` = vertical
-/// (left/right room edge).
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-enum WallDir {
-    X,
-    Y,
 }
 
 pub struct World {
@@ -504,7 +491,7 @@ impl World {
             }
         }
 
-        let ntr = building_intersect_moving_rect(&self.building, robot.moving_rect());
+        let ntr = self.building.intersect_moving_rect(robot.moving_rect());
         if ntr.hit && ntr.time < collision.ntr.time {
             collision = Collision2D {
                 ntr,
@@ -549,7 +536,7 @@ impl World {
             for r in self.robots.values() {
                 proj.intersect_robot(r.moving_box(), r.id);
             }
-            let ntr = building_intersect_trajectory(&self.building, proj.trajectory);
+            let ntr = self.building.intersect_trajectory(proj.trajectory);
             proj.intersect_building(ntr);
 
             let collision = proj.collision();
@@ -873,7 +860,7 @@ impl World {
     /// PARITY: `cOperationPurge::GetRectPosition` (`cOperationPurge.cpp:2347-2369`)
     /// — 1000-try rejection sampling inside the building extents.
     fn get_rect_position(&mut self, size: Vec2) -> Vec2 {
-        let building = building_size(&self.building);
+        let building = self.building.size();
         let mut tries = 0u32;
         loop {
             let x = self.rng.frand() * building.x;
@@ -902,7 +889,7 @@ impl World {
                 return true;
             }
         }
-        building_intersect_rect(&self.building, rc)
+        self.building.intersect_rect(rc)
     }
 
     /// PARITY: `cOperationPurge::InitializeCenterPositions`
@@ -919,25 +906,25 @@ impl World {
                 let mut candidates: Vec<crate::sim::spawn::CenterPosition> = Vec::new();
                 let base = Vec2::new(wall_x as f32 * room_size, wall_y as f32 * room_size);
 
-                if wall_at(&self.building, WallDir::X, wall_x, wall_y) {
+                if self.building.wall_at(WallDir::X, wall_x, wall_y) {
                     candidates.push(crate::sim::spawn::CenterPosition {
                         position: base,
                         orientation: Orientation::Up,
                     });
                 }
-                if wall_at(&self.building, WallDir::Y, wall_x, wall_y) {
+                if self.building.wall_at(WallDir::Y, wall_x, wall_y) {
                     candidates.push(crate::sim::spawn::CenterPosition {
                         position: base,
                         orientation: Orientation::Left,
                     });
                 }
-                if wall_at(&self.building, WallDir::X, wall_x, wall_y + 1) {
+                if self.building.wall_at(WallDir::X, wall_x, wall_y + 1) {
                     candidates.push(crate::sim::spawn::CenterPosition {
                         position: base,
                         orientation: Orientation::Down,
                     });
                 }
-                if wall_at(&self.building, WallDir::Y, wall_x + 1, wall_y) {
+                if self.building.wall_at(WallDir::Y, wall_x + 1, wall_y) {
                     candidates.push(crate::sim::spawn::CenterPosition {
                         position: base,
                         orientation: Orientation::Right,
@@ -1070,247 +1057,5 @@ impl World {
     /// design §1.5.11). `n` must be nonzero.
     fn rand_index(&mut self, n: usize) -> usize {
         ((self.rng.frand() * n as f32) as usize).min(n - 1)
-    }
-}
-
-// ===================== building collision helpers =====================
-// PARITY: ported from `cBuilding.cpp`. Kept as free functions over
-// `&Building` (rather than methods on `maze::building`) so M6 does not have
-// to touch the render-track `maze/building.rs` file; wall existence is read
-// through `Maze::surrounding_walls` (the GUARD out-of-grid=no-wall accessor,
-// design §1.3).
-
-/// `cMaze::GetWall(x, y, dir)` for the two wall directions.
-/// `WallDir::X` = `surrounding_walls[top]` = `h_wall(x,y)`;
-/// `WallDir::Y` = `surrounding_walls[left]` = `v_wall(x,y)`.
-fn wall_at(building: &Building, dir: WallDir, x: i32, y: i32) -> bool {
-    let sw = building.maze.surrounding_walls(x, y);
-    match dir {
-        WallDir::X => sw[0], // top edge of room (x,y)
-        WallDir::Y => sw[2], // left edge of room (x,y)
-    }
-}
-
-/// `cBuilding::GetSize` (`cBuilding.cpp:52-56`).
-fn building_size(building: &Building) -> Vec3 {
-    Vec3::new(
-        building.maze.cx as f32 * building.room_size,
-        building.maze.cy as f32 * building.room_size,
-        building.ceiling_height,
-    )
-}
-
-/// `cBuilding::WallToRect` (`cBuilding.cpp:96-119`).
-fn wall_to_rect(building: &Building, dir: WallDir, x: i32, y: i32) -> Rect {
-    let rs = building.room_size;
-    let ww = building.wall_width;
-    match dir {
-        WallDir::X => Rect {
-            center: Vec2::new((x as f32 + 0.5) * rs, y as f32 * rs),
-            size: Vec2::new(rs + ww, ww),
-        },
-        WallDir::Y => Rect {
-            center: Vec2::new(x as f32 * rs, (y as f32 + 0.5) * rs),
-            size: Vec2::new(ww, rs + ww),
-        },
-    }
-}
-
-/// `cBuilding::WallToBox` (`cBuilding.cpp:122-147`).
-fn wall_to_box(building: &Building, dir: WallDir, x: i32, y: i32) -> Box3 {
-    let rs = building.room_size;
-    let ww = building.wall_width;
-    let ch = building.ceiling_height;
-    match dir {
-        WallDir::X => Box3 {
-            center: Vec3::new((x as f32 + 0.5) * rs, y as f32 * rs, 0.5 * ch),
-            size: Vec3::new(rs + ww, ww, ch),
-        },
-        WallDir::Y => Box3 {
-            center: Vec3::new(x as f32 * rs, (y as f32 + 0.5) * rs, 0.5 * ch),
-            size: Vec3::new(ww, rs + ww, ch),
-        },
-    }
-}
-
-/// PARITY: `cBuilding::IntersectRect` (`cBuilding.cpp:164-208`) — static
-/// rect-vs-wall test used by spawn placement. Preserves the original's
-/// quirk of using `size2Size.y` for BOTH the x and y bounds
-/// (`cBuilding.cpp:170-173`; harmless because spawn rects are square).
-fn building_intersect_rect(building: &Building, rc: Rect) -> bool {
-    let recip = 1.0 / building.room_size;
-    let size_y = (rc.size.y + building.wall_width) * 0.5;
-    let iwx1 = floor_i32((rc.center.x - size_y) * recip);
-    let iwy1 = floor_i32((rc.center.y - size_y) * recip);
-    let iwx2 = floor_i32((rc.center.x + size_y) * recip);
-    let iwy2 = floor_i32((rc.center.y + size_y) * recip);
-
-    // Walls in the x direction.
-    for y in (iwy1 + 1).max(0)..=iwy2 {
-        for x in iwx1.max(0)..=iwx2 {
-            if wall_at(building, WallDir::X, x, y)
-                && rect_rect(rc, wall_to_rect(building, WallDir::X, x, y))
-            {
-                return true;
-            }
-        }
-    }
-    // Walls in the y direction.
-    for y in iwy1.max(0)..=iwy2 {
-        for x in (iwx1 + 1).max(0)..=iwx2 {
-            if wall_at(building, WallDir::Y, x, y)
-                && rect_rect(rc, wall_to_rect(building, WallDir::Y, x, y))
-            {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// PARITY: `cBuilding::IntersectMovingRect` -> `GetIntersectedWalls`
-/// (`cBuilding.cpp:211-216,451-460`) with `pntr` set, `pvWalls` null =>
-/// `bFindAll = true`: returns the earliest-time wall intersection.
-fn building_intersect_moving_rect(building: &Building, mrc: MovingRect) -> Intersection2D {
-    let mut ntr = no_intersection_2d();
-    let mut walls: Vec<(WallDir, i32, i32)> = Vec::new();
-    get_intersected_walls_portion(building, mrc, false, true, &mut walls, &mut ntr, 0);
-    ntr
-}
-
-/// PARITY: `cBuilding::IntersectTrajectory` (`cBuilding.cpp:219-273`).
-fn building_intersect_trajectory(
-    building: &Building,
-    traj: crate::math::intersect::Trajectory,
-) -> Intersection3D {
-    // The moving rect spans the trajectory's 2D footprint (size 0).
-    let end =
-        crate::math::accelerate_point(traj.travel_time, traj.start, traj.direction, traj.gravity);
-    let mrc = MovingRect {
-        center1: traj.start.truncate(),
-        center2: end.truncate(),
-        size: Vec2::ZERO,
-        stop_time: 1.0,
-    };
-    let mut walls: Vec<(WallDir, i32, i32)> = Vec::new();
-    let mut ntr2 = no_intersection_2d();
-    get_intersected_walls_portion(building, mrc, true, false, &mut walls, &mut ntr2, 0);
-
-    let mut ntr = no_intersection_3d();
-    for &(dir, x, y) in &walls {
-        let bx = wall_to_box(building, dir, x, y);
-        let n = trajectory_box(traj, bx);
-        if n.hit && n.time < ntr.time {
-            ntr = n;
-        }
-    }
-
-    let size = building_size(building);
-    // Floor plane.
-    let floor = Plane3D {
-        axis: PlaneAxis::Z,
-        center: Vec3::new(size.x * 0.5, size.y * 0.5, 0.0),
-        size,
-    };
-    let n = trajectory_plane(traj, floor);
-    if n.hit && n.time < ntr.time {
-        ntr = n;
-    }
-    // Ceiling plane.
-    let ceiling = Plane3D {
-        axis: PlaneAxis::Z,
-        center: Vec3::new(size.x * 0.5, size.y * 0.5, building.ceiling_height),
-        size,
-    };
-    let n = trajectory_plane(traj, ceiling);
-    if n.hit && n.time < ntr.time {
-        ntr = n;
-    }
-
-    ntr
-}
-
-/// PARITY: `cBuilding::GetIntersectedWallsPortion`
-/// (`cBuilding.cpp:467-602`). Both call sites pass `bFindAll = true`, so
-/// this always visits every sub-segment and every candidate wall (the
-/// early-return `&& !bFindAll` short-circuits never fire); `want_walls`
-/// collects the intersected walls, `want_ntr` keeps the earliest-time
-/// intersection. Recursion depth is capped at 3 (`iLevel > 3`).
-#[allow(clippy::too_many_arguments)]
-fn get_intersected_walls_portion(
-    building: &Building,
-    mrc: MovingRect,
-    want_walls: bool,
-    want_ntr: bool,
-    walls: &mut Vec<(WallDir, i32, i32)>,
-    ntr: &mut Intersection2D,
-    level: u32,
-) {
-    let offset_x = (mrc.size.x + building.wall_width) * 0.5;
-    let offset_y = (mrc.size.y + building.wall_width) * 0.5;
-    let recip = 1.0 / building.room_size;
-    let fwx1 = (mrc.center1.x.min(mrc.center2.x) - offset_x) * recip;
-    let fwy1 = (mrc.center1.y.min(mrc.center2.y) - offset_y) * recip;
-    let fwx2 = (mrc.center1.x.max(mrc.center2.x) + offset_x) * recip;
-    let fwy2 = (mrc.center1.y.max(mrc.center2.y) + offset_y) * recip;
-    let iwx1 = floor_i32(fwx1);
-    let iwy1 = floor_i32(fwy1);
-    let iwx2 = floor_i32(fwx2);
-    let iwy2 = floor_i32(fwy2);
-
-    if iwx1 == iwx2 || iwy1 == iwy2 || level > 3 {
-        let cx = building.maze.cx;
-        let cy = building.maze.cy;
-        if iwx1 >= cx || iwx2 < 0 || iwy1 >= cy || iwy2 < 0 {
-            // Both points are outside of the maze.
-            return;
-        }
-
-        // Walls in the x direction.
-        for y in (iwy1 + 1)..=iwy2 {
-            for x in iwx1..=iwx2 {
-                if wall_at(building, WallDir::X, x, y) {
-                    let n = moving_rect_rect(mrc, wall_to_rect(building, WallDir::X, x, y));
-                    if !n.hit {
-                        continue;
-                    }
-                    if want_walls {
-                        walls.push((WallDir::X, x, y));
-                    }
-                    if want_ntr && n.time < ntr.time {
-                        *ntr = n;
-                    }
-                }
-            }
-        }
-        // Walls in the y direction.
-        for y in iwy1..=iwy2 {
-            for x in (iwx1 + 1)..=iwx2 {
-                if wall_at(building, WallDir::Y, x, y) {
-                    let n = moving_rect_rect(mrc, wall_to_rect(building, WallDir::Y, x, y));
-                    if !n.hit {
-                        continue;
-                    }
-                    if want_walls {
-                        walls.push((WallDir::Y, x, y));
-                    }
-                    if want_ntr && n.time < ntr.time {
-                        *ntr = n;
-                    }
-                }
-            }
-        }
-    } else {
-        // Split the segment into four and recurse.
-        let movement = mrc.center2 - mrc.center1;
-        for (a, b) in [(0.0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.0)] {
-            let sub = MovingRect {
-                center1: mrc.center1 + movement * a,
-                center2: mrc.center1 + movement * b,
-                size: mrc.size,
-                stop_time: mrc.stop_time,
-            };
-            get_intersected_walls_portion(building, sub, want_walls, want_ntr, walls, ntr, level + 1);
-        }
     }
 }

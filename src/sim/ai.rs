@@ -270,11 +270,7 @@ pub fn run_ai_except(world: &mut World, dt: f32, skip: Option<RobotId>) {
     // Disjoint-field borrows: graph reads world.building.maze; game_data
     // reads world.game_data; the per-robot mutation touches world.robots /
     // world.ai / world.inputs. All distinct fields.
-    let graph = RoomGraph::new(
-        &world.building.maze,
-        world.building.room_size,
-        world.building.wall_width,
-    );
+    let graph = RoomGraph::new(&world.building);
     let robot_types = &world.game_data.robot_types;
     let projectile_types = &world.game_data.projectile_types;
 
@@ -454,7 +450,7 @@ impl AiCtx<'_> {
             size: self.size(),
             stop_time: 1.0,
         };
-        !self.graph.intersect_moving_rect(mrc).hit
+        !self.graph.building.intersect_moving_rect(mrc).hit
     }
 
     // ---- transfer desire/critical (cAIRobot.cpp:478-527) ----

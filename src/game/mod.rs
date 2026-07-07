@@ -741,11 +741,7 @@ impl Game {
         };
         let mvd =
             self.world.game_data.robot_types[active.robot_type.get() as usize].max_visible_dist;
-        let graph = RoomGraph::new(
-            &self.world.building.maze,
-            self.world.building.room_size,
-            self.world.building.wall_width,
-        );
+        let graph = RoomGraph::new(&self.world.building);
         let size = Vec2::new(ROBOT_SIZE_XY, ROBOT_SIZE_XY);
         for r in self.world.robots.values() {
             if r.is_dead() || r.team == active.team {
@@ -760,7 +756,7 @@ impl Game {
                 size,
                 stop_time: 1.0,
             };
-            if !graph.intersect_moving_rect(mrc).hit {
+            if !graph.building.intersect_moving_rect(mrc).hit {
                 return true;
             }
         }
