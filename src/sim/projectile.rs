@@ -63,6 +63,11 @@ pub struct Projectile {
     pub trajectory: Trajectory,
     /// `m_CollidedObject` accumulated across the per-frame swept tests.
     pub collided: Collision3D,
+    /// The projectile's ongoing trail effect (`travel_effect`), if its type
+    /// defines one. A **dynamic** effect that follows the projectile and is
+    /// dropped with it when the projectile is destroyed (owner-deletes;
+    /// M9 wiring, `sim::world`).
+    pub travel_effect: Option<crate::sim::particles::ParticleEffect>,
 }
 
 impl Projectile {
@@ -91,6 +96,7 @@ impl Projectile {
                 travel_time: 0.0,
             },
             collided: Collision3D::none(),
+            travel_effect: None,
         }
     }
 

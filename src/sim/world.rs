@@ -24,7 +24,7 @@
 //! stubbed here (M9/M10 hooks).
 
 use crate::data::{GameData, RobotType};
-use crate::ids::{CenterId, GameDefId, RobotId, TeamId};
+use crate::ids::{CenterId, EffectDefId, GameDefId, RobotId, TeamId};
 use crate::maze::building::Building;
 use crate::math::floor_i32;
 use crate::math::intersect::{
@@ -124,6 +124,14 @@ pub struct World {
     pub enemy_visible_throttle: f32,
     pub cheat_fire_cooldown: f32,
     pub listener_frame_counter: u32,
+    /// M10 audio hook: the DS3D listener pose (observer/active-robot
+    /// position + heading), refreshed every 10th frame by the app on the
+    /// [`is_audio_listener_update_frame`](Self::is_audio_listener_update_frame)
+    /// boundary. Headless `World` has no observer of its own, so it holds
+    /// the neutral pose until the app pushes one via
+    /// [`set_audio_listener`](Self::set_audio_listener). PARITY:
+    /// `ListenerData` in `cOperationPurge.cpp:1276-1291`.
+    pub audio_listener: crate::audio::spatial::AudioListener,
 }
 
 impl World {
@@ -167,6 +175,7 @@ impl World {
             enemy_visible_throttle: 0.0,
             cheat_fire_cooldown: 0.0,
             listener_frame_counter: 0,
+            audio_listener: crate::audio::spatial::AudioListener::default(),
         };
         world.start_game();
         world
@@ -197,6 +206,7 @@ impl World {
         self.enemy_visible_throttle = 0.0;
         self.cheat_fire_cooldown = 0.0;
         self.listener_frame_counter = 0;
+        self.audio_listener = crate::audio::spatial::AudioListener::default();
 
         // Centers (before robots, as in StartGame).
         self.initialize_center_positions();
@@ -280,20 +290,58 @@ impl World {
             }
         }
 
-        // (particles moved here in the original — M9)
+        // M9: move + expire particles (the original stepped particles here
+        // in MoveObjects). No RNG/data needed — kinematics live on each
+        // particle; expired slots are freed.
+        self.particles.move_all(dt);
 
         // Move projectiles + resolve hits (`cOperationPurge.cpp:702-736`).
+        // Projectile trail (travel) effects and per-hit collision effects
+        // are driven inside `step_projectiles` (M9).
         self.step_projectiles(dt);
 
-        // (particle effects moved here in the original — M9)
+        // M9: advance static burst effects (fire/collision/destroy) and drop
+        // finished ones. `mem::take` sidesteps the split borrow of
+        // `self.effects` + `self.particles`/`self.rng`.
+        let mut effects = std::mem::take(&mut self.effects);
+        for eff in effects.iter_mut() {
+            eff.move_self(dt, &self.game_data, &mut self.particles, &mut self.rng);
+        }
+        // PARITY: dynamic effects never self-prune (they never reach
+        // `is_finished`); only static burst effects are removed here.
+        effects.retain(|e| !e.is_finished());
+        self.effects = effects;
 
         // RemoveDestroyedRobots -> Transfer (`cOperationPurge.cpp:1239-1240`).
         self.remove_destroyed_robots();
         self.transfer(dt);
 
-        // Audio alarms/listener (`cOperationPurge.cpp:1247-1349`) — M10.
-        // Only the 10-frame listener counter (an ex-static) is kept live.
-        self.listener_frame_counter = (self.listener_frame_counter + 1) % 10;
+        // Audio alarms/listener (`cOperationPurge.cpp:1247-1349`) — M10 hook.
+        // PARITY: the original increments the 10-frame counter, then updates
+        // the DS3D listener when it wraps to 0. The counter (an ex-static) is
+        // kept live here; the app reads
+        // [`is_audio_listener_update_frame`](Self::is_audio_listener_update_frame)
+        // after each `frame()` to know when to refresh
+        // [`audio_listener`](Self::audio_listener) and to drive the alarm
+        // loops + per-event 3D sounds through `audio::SpatialSounds`.
+        self.listener_frame_counter = (self.listener_frame_counter + 1)
+            % crate::audio::spatial::LISTENER_UPDATE_INTERVAL_FRAMES;
+    }
+
+    /// M10 audio hook: `true` on the frame boundary where the DS3D listener
+    /// must be refreshed (every 10th frame). PARITY: mirrors the original's
+    /// `iFrame = (iFrame + 1) % UpdateFrameDelay; if (iFrame == 0)` gate
+    /// (`cOperationPurge.cpp:1249-1253`) — call after [`frame`](Self::frame).
+    pub fn is_audio_listener_update_frame(&self) -> bool {
+        self.listener_frame_counter == 0
+    }
+
+    /// M10 audio hook: push the observer/active-robot pose the app resolved
+    /// for this update frame (position + heading), building the DS3D
+    /// listener exactly as `ExecuteCommands` did
+    /// (`cOperationPurge.cpp:1277-1285`).
+    pub fn set_audio_listener(&mut self, position: Vec2, rotation: f32) {
+        self.audio_listener = crate::audio::spatial::AudioListener::from_pose(position, rotation);
     }
 
     /// Sets (or replaces) a robot's input for the next frame.
@@ -333,9 +381,12 @@ impl World {
         }
 
         for (owner, req) in requests {
-            let initial_speed =
-                self.game_data.projectile_types[req.projectile_type.get() as usize].initial_speed;
-            self.projectiles.push(Projectile::new(
+            let idx = req.projectile_type.get() as usize;
+            let (initial_speed, fire_effect, travel_effect) = {
+                let pt = &self.game_data.projectile_types[idx];
+                (pt.initial_speed, pt.fire_effect, pt.travel_effect)
+            };
+            let mut proj = Projectile::new(
                 req.projectile_type,
                 Some(owner),
                 req.position,
@@ -343,7 +394,33 @@ impl World {
                 req.theta,
                 req.phi,
                 initial_speed,
-            ));
+            );
+            // M9: fire effect — a static burst at the muzzle carrying the
+            // muzzle velocity (so a relative emit cone points down-barrel).
+            if let Some(def) = fire_effect {
+                let eff = ParticleEffect::new(
+                    &self.game_data,
+                    def,
+                    false,
+                    proj.position,
+                    proj.velocity,
+                    &mut self.rng,
+                );
+                self.effects.push(eff);
+            }
+            // M9: travel effect — a dynamic trail that follows the projectile
+            // (never self-prunes; dropped with the projectile on destroy).
+            if let Some(def) = travel_effect {
+                proj.travel_effect = Some(ParticleEffect::new(
+                    &self.game_data,
+                    def,
+                    true,
+                    proj.position,
+                    proj.velocity,
+                    &mut self.rng,
+                ));
+            }
+            self.projectiles.push(proj);
         }
     }
 
@@ -426,9 +503,24 @@ impl World {
         let mut survivors = Vec::with_capacity(projectiles.len());
 
         for mut proj in projectiles {
-            let gravity =
-                self.game_data.projectile_types[proj.projectile_type.get() as usize].gravity_accel;
+            let idx = proj.projectile_type.get() as usize;
+            let gravity = self.game_data.projectile_types[idx].gravity_accel;
+            let collision_effect = self.game_data.projectile_types[idx].collision_effect;
             proj.step(dt, gravity);
+
+            // M9: drive the trail effect to the projectile's new state so
+            // the emitter interpolates spawns along the traveled segment
+            // (gap-free at any game speed).
+            if let Some(eff) = proj.travel_effect.as_mut() {
+                eff.move_with(
+                    dt,
+                    proj.position,
+                    proj.velocity,
+                    &self.game_data,
+                    &mut self.particles,
+                    &mut self.rng,
+                );
+            }
 
             // IntersectProjectileObjects: every robot, then the building.
             for r in self.robots.values() {
@@ -438,6 +530,15 @@ impl World {
             proj.intersect_building(ntr);
 
             let collision = proj.collision();
+            // M9: the impact point (on the swept segment) + the projectile's
+            // velocity there, for the collision burst effect.
+            let impact = crate::math::accelerate_point(
+                collision.ntr.time,
+                proj.trajectory.start,
+                proj.trajectory.direction,
+                proj.trajectory.gravity,
+            );
+            let impact_vel = proj.velocity;
             match collision.kind {
                 CollisionKind::None => survivors.push(proj),
                 CollisionKind::Robot => {
@@ -447,14 +548,17 @@ impl World {
                             r.projectile_hit(damage);
                         }
                     }
-                    // The projectile hit an object, so it is destroyed.
+                    // M9: collision burst. The projectile (with its trail) is
+                    // dropped here — the dynamic trail dies with its owner.
+                    self.spawn_burst_effect(collision_effect, impact, impact_vel);
                 }
                 CollisionKind::Wall => {
                     // DisplayHole (`cProjectile.cpp:237-300`).
                     if let Some((position, normal)) = proj.hole_placement() {
                         self.holes.push(Hole { position, normal });
                     }
-                    // The projectile is destroyed.
+                    // M9: collision burst; the projectile is destroyed.
+                    self.spawn_burst_effect(collision_effect, impact, impact_vel);
                 }
             }
         }
@@ -462,14 +566,44 @@ impl World {
         self.projectiles = survivors;
     }
 
+    /// M9: spawn a **static** burst effect (fire/collision/destroy) at
+    /// `position` carrying `velocity`, if `def` is set. Static so `frame`
+    /// prunes it once every emitter has expired.
+    fn spawn_burst_effect(&mut self, def: Option<EffectDefId>, position: Vec3, velocity: Vec3) {
+        if let Some(def) = def {
+            let eff = ParticleEffect::new(&self.game_data, def, false, position, velocity, &mut self.rng);
+            self.effects.push(eff);
+        }
+    }
+
     /// PARITY: `cOperationPurge::RemoveDestroyedRobots`
     /// (`cOperationPurge.cpp:778-800`). Headless has no active robot to
     /// protect, so every dead robot is removed (the original keeps a
     /// dead active robot alive only to preserve a raw pointer; the
     /// win/lose accounting in `GetGameStatus` treats it as dead either
-    /// way). PlayDestroySound/DisplayDestroyEffect are M10/M9 hooks.
+    /// way). PlayDestroySound is an M10 hook; the destroy effect is M9.
     fn remove_destroyed_robots(&mut self) {
+        // M9: collect each dead robot's destroy effect (at its 3D center,
+        // carrying its 2D velocity) before removal.
+        let mut bursts: Vec<(EffectDefId, Vec3, Vec3)> = Vec::new();
+        for r in self.robots.values() {
+            if r.is_dead() {
+                if let Some(def) =
+                    self.game_data.robot_types[r.robot_type.get() as usize].destroy_effect
+                {
+                    let vel = r.velocity();
+                    bursts.push((
+                        def,
+                        Vec3::new(r.position.x, r.position.y, crate::sim::robot::ROBOT_CENTER_Z),
+                        Vec3::new(vel.x, vel.y, 0.0),
+                    ));
+                }
+            }
+        }
         self.robots.retain(|_, r| !r.is_dead());
+        for (def, position, velocity) in bursts {
+            self.spawn_burst_effect(Some(def), position, velocity);
+        }
     }
 
     /// PARITY: `cOperationPurge::Transfer` (`cOperationPurge.cpp:868-877`)

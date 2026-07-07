@@ -237,6 +237,51 @@ pub fn clip_fix() -> Mat4 {
     )
 }
 
+/// Verbatim port of `D3DXQuaternionNormalize` (standard D3DX9 reference
+/// algorithm; see module doc). Divides `(x,y,z,w)` by its 4-D length; the
+/// **zero** quaternion maps to the zero quaternion (matching the Wine
+/// `d3dx9_36` reference `if (!norm) out = 0`), which is load-bearing for
+/// the emitter's anti-parallel degenerate case (`cParticleEmitter.cpp:113`
+/// — a zero quaternion normalizes to `w == 0`, tripping the fallback).
+///
+/// PARITY (design §1.3, source-map §3.6/§7): NaN inputs propagate — `norm`
+/// is then `NaN`, `norm == 0.0` is false, and the divide yields `NaN`
+/// (the "NaN on zero emitter velocity" path). Do **not** add a finiteness
+/// guard.
+pub fn quaternion_normalize(x: f32, y: f32, z: f32, w: f32) -> (f32, f32, f32, f32) {
+    let norm = (x * x + y * y + z * z + w * w).sqrt();
+    if norm == 0.0 {
+        (0.0, 0.0, 0.0, 0.0)
+    } else {
+        (x / norm, y / norm, z / norm, w / norm)
+    }
+}
+
+/// Verbatim port of `D3DXMatrixRotationQuaternion` (standard D3DX9
+/// reference algorithm; see module doc). Call site:
+/// `cParticleEmitter.cpp:118` (rotating the emit cone onto the emitter's
+/// velocity). Row-major / row-vector layout consistent with this module,
+/// so `mat.mul_row_vec4([v, 1])` reproduces `D3DXVec3TransformCoord`
+/// (an affine rotation keeps `w == 1`, so no perspective divide is needed).
+///
+/// ```text
+/// [ 1-2(y²+z²)   2(xy+wz)     2(xz-wy)     0 ]
+/// [ 2(xy-wz)     1-2(x²+z²)   2(yz+wx)     0 ]
+/// [ 2(xz+wy)     2(yz-wx)     1-2(x²+y²)   0 ]
+/// [ 0            0            0            1 ]
+/// ```
+pub fn matrix_rotation_quaternion(x: f32, y: f32, z: f32, w: f32) -> Mat4 {
+    let (xx, yy, zz) = (x * x, y * y, z * z);
+    let (xy, xz, yz) = (x * y, x * z, y * z);
+    let (wx, wy, wz) = (w * x, w * y, w * z);
+    Mat4::from_rows(
+        [1.0 - 2.0 * (yy + zz), 2.0 * (xy + wz), 2.0 * (xz - wy), 0.0],
+        [2.0 * (xy - wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz + wx), 0.0],
+        [2.0 * (xz + wy), 2.0 * (yz - wx), 1.0 - 2.0 * (xx + yy), 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    )
+}
+
 /// Billboard basis extraction — PARITY, `cSprite3D.cpp:80-85`: reads the
 /// view matrix's upper-left 3x3 **columns** (fixing the column index,
 /// varying row 0..2), each independently re-normalized exactly as
@@ -446,6 +491,52 @@ mod tests {
         assert!((right - Vec3::new(-1.0, 0.0, 0.0)).length() < 1e-6);
         assert!((up - Vec3::new(0.0, 0.0, 1.0)).length() < 1e-6);
         assert!((forward - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-6);
+    }
+
+    #[test]
+    fn quaternion_normalize_zero_stays_zero() {
+        // PARITY (cParticleEmitter.cpp:113): the zero quaternion normalizes
+        // to the zero quaternion (w == 0), which trips the emitter fallback.
+        let (x, y, z, w) = quaternion_normalize(0.0, 0.0, 0.0, 0.0);
+        assert_eq!((x, y, z, w), (0.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn quaternion_normalize_nan_propagates() {
+        // PARITY: NaN in -> NaN out (no finiteness guard); the "NaN on zero
+        // emitter velocity" degenerate path.
+        let (_, _, _, w) = quaternion_normalize(f32::NAN, f32::NAN, f32::NAN, f32::NAN);
+        assert!(w.is_nan());
+    }
+
+    #[test]
+    fn quaternion_normalize_unit_axis() {
+        // A unit quaternion is unchanged.
+        let (x, y, z, w) = quaternion_normalize(0.0, 1.0, 0.0, 0.0);
+        assert_eq!((x, y, z, w), (0.0, 1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn matrix_rotation_quaternion_z180_fallback() {
+        // The emitter anti-parallel fallback quaternion (0,0,1,0) is a 180°
+        // rotation about Z: diag(-1,-1,1). A +Z cone vector is unchanged
+        // (does NOT flip onto the emitter's -Z direction — the quirk).
+        let m = matrix_rotation_quaternion(0.0, 0.0, 1.0, 0.0);
+        let out = m.mul_row_vec4([2.0, 3.0, 5.0, 1.0]);
+        assert!((out[0] - -2.0).abs() < 1e-6);
+        assert!((out[1] - -3.0).abs() < 1e-6);
+        assert!((out[2] - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn matrix_rotation_quaternion_90_about_y_maps_z_to_x() {
+        // q for +Z -> +X: normalize(0, 1, 0, 1).
+        let (x, y, z, w) = quaternion_normalize(0.0, 1.0, 0.0, 1.0);
+        let m = matrix_rotation_quaternion(x, y, z, w);
+        let out = m.mul_row_vec4([0.0, 0.0, 1.0, 1.0]);
+        assert!((out[0] - 1.0).abs() < 1e-6, "x {}", out[0]);
+        assert!(out[1].abs() < 1e-6);
+        assert!(out[2].abs() < 1e-6);
     }
 
     #[test]
