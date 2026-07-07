@@ -241,21 +241,23 @@ impl AppRunner {
         };
 
         // Textures for the building (white fallback so geometry is visible).
+        // Filenames are compiled in (`data::assets::names`), not read from data.
+        use crate::data::assets::names;
         let tex_dir = assets.join("Textures");
         let load_tex = |name: &str| -> glow::Texture {
             let path = tex_dir.join(name);
             std::fs::read(&path)
                 .ok()
                 .and_then(|bytes| {
-                    crate::render::textures::decode_bmp(&bytes, ProcessMode::NoAlpha).ok()
+                    crate::render::textures::decode_image(&bytes, ProcessMode::NoAlpha).ok()
                 })
                 .and_then(|img| Texture::upload(&ctx, &img).ok())
                 .unwrap_or_else(|| white_texture(&ctx))
                 .handle
         };
-        let wall_tex = load_tex(&b.wall_texture);
-        let floor_tex = load_tex(&b.floor_texture);
-        let ceiling_tex = load_tex(&b.ceiling_texture);
+        let wall_tex = load_tex(names::WALL_TEXTURE);
+        let floor_tex = load_tex(names::FLOOR_TEXTURE);
+        let ceiling_tex = load_tex(names::CEILING_TEXTURE);
 
         // Build the world + game.
         let seed = self.resolve_seed();
@@ -895,27 +897,21 @@ impl GameAudio {
         };
         let voices = data.sounds.simultaneous_instances.max(1) as usize;
         let sounds_dir = assets.join("Sounds");
+        use crate::data::assets::names;
 
-        // Preload each named clip on the backend (deduped by path). ClipIds
-        // are assigned densely from 0, so registering that many pools in the
-        // SpatialSounds keeps its pool ClipIds aligned with the backend's.
+        // Preload the fixed compiled-in sound set (deduped by path). ClipIds
+        // are assigned densely from 0 in `ALL_SOUNDS` order, so the alarms
+        // (listed first) get ClipId 0 and 1; registering that many pools in
+        // the SpatialSounds keeps its pool ClipIds aligned with the backend's.
+        // Per-event fire/collision/destroy clips are preloaded here too so
+        // playback is click-free; per-event 3D emission is wired once the
+        // World surfaces a frame event log (follow-up).
         let mut ids: Vec<crate::audio::ClipId> = Vec::new();
-        let enemy = preload_clip(&mut backend, &sounds_dir, &data.sounds.enemy_visible_sound);
-        ids.extend(enemy);
-        let targeted = preload_clip(&mut backend, &sounds_dir, &data.sounds.targeted_sound);
-        ids.extend(targeted);
-
-        // Per-event clips (fire/collision/destroy) — preloaded so playback is
-        // click-free; per-event 3D emission is wired once the World surfaces a
-        // frame event log (follow-up).
-        let (robot_sounds, projectile_sounds) = crate::audio::per_event_sound_names(data);
-        for name in robot_sounds.values() {
+        for name in names::ALL_SOUNDS {
             ids.extend(preload_clip(&mut backend, &sounds_dir, name));
         }
-        for (fire, collision) in projectile_sounds.values() {
-            ids.extend(preload_clip(&mut backend, &sounds_dir, fire));
-            ids.extend(preload_clip(&mut backend, &sounds_dir, collision));
-        }
+        let enemy = preload_clip(&mut backend, &sounds_dir, names::ENEMY_VISIBLE_SOUND);
+        let targeted = preload_clip(&mut backend, &sounds_dir, names::TARGETED_SOUND);
 
         let n_clips = ids.iter().map(|c| c.0 + 1).max().unwrap_or(0);
         let mut sounds = crate::audio::SpatialSounds::new(backend);

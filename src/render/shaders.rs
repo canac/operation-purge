@@ -272,7 +272,8 @@ mod tests {
 
     #[test]
     fn light_atten_uniform_comes_from_the_builtin_const() {
-        assert_eq!(light_atten_uniform(), [1.0, 0.02, 0.0]);
+        // Verified originals from the recovered LightData.txt.
+        assert_eq!(light_atten_uniform(), [0.5, 0.25, 0.0]);
     }
 
     #[test]

@@ -1,18 +1,19 @@
 //! Filename-keyed texture cache, replacing `cTextureManager`
 //! (source-map §3.2, `cTextureManager.cpp`).
 //!
-//! BMP decode goes through the `image` crate (4-bit palettized incl. the
-//! NPOT `Camo big.bmp` — proven at the M0 spike). `processNoAlpha` forces
-//! the texture fully opaque (the original passed `D3DFMT_X8R8G8B8`,
-//! `cTextureManager.cpp:68`); `processUseAlpha` keeps the source alpha (the
-//! shipped BMPs carry none, so both modes yield opaque RGBA — but the
-//! distinction is preserved for parity). The luminance-to-alpha mode was
-//! dead code in the original (commented out) and is not ported.
+//! Every shipped texture is normalized offline to **PNG RGBA8** (see the
+//! README), so decode is a single `image::load_from_memory` call — the crate
+//! auto-detects the format and the port needs no per-format branch.
+//! `processNoAlpha` forces the texture fully opaque (the original passed
+//! `D3DFMT_X8R8G8B8`, `cTextureManager.cpp:68`); `processUseAlpha` keeps the
+//! source alpha. The building textures are opaque, the projectile/particle
+//! sprites carry real alpha. The luminance-to-alpha mode was dead code in the
+//! original (commented out) and is not ported.
 //!
 //! `GL_REPEAT` wrap is mandatory (building UV = length/textureSize) and
 //! `GL_LINEAR`/`GL_LINEAR_MIPMAP_LINEAR` filtering matches the D3D sampler
 //! state (design §3.5). Decode is a pure CPU function (unit-tested against
-//! known pixel colors for all three shipped BMPs); GL upload is compiled but
+//! known pixel colors of the shipped PNGs); GL upload is compiled but
 //! exercised only at runtime.
 
 use std::collections::HashMap;
@@ -55,10 +56,10 @@ impl DecodedImage {
     }
 }
 
-/// Decode BMP bytes to RGBA8, applying `mode`'s alpha policy. Pure — no GL.
-pub fn decode_bmp(bytes: &[u8], mode: ProcessMode) -> Result<DecodedImage, String> {
-    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Bmp)
-        .map_err(|e| format!("BMP decode failed: {e}"))?;
+/// Decode image bytes to RGBA8, applying `mode`'s alpha policy. The format is
+/// auto-detected (all shipped textures are PNG). Pure — no GL.
+pub fn decode_image(bytes: &[u8], mode: ProcessMode) -> Result<DecodedImage, String> {
+    let img = image::load_from_memory(bytes).map_err(|e| format!("image decode failed: {e}"))?;
     let mut rgba = img.to_rgba8();
     if mode == ProcessMode::NoAlpha {
         // processNoAlpha: force every texel opaque (X8R8G8B8).
@@ -145,7 +146,7 @@ impl TextureManager {
         if !self.cache.contains_key(path) {
             let bytes = std::fs::read(path)
                 .map_err(|e| GlError::Context(format!("cannot read {}: {e}", path.display())))?;
-            let image = decode_bmp(&bytes, mode)
+            let image = decode_image(&bytes, mode)
                 .map_err(|e| GlError::Context(format!("{}: {e}", path.display())))?;
             let texture = Texture::upload(&self.gl, &image)?;
             self.cache.insert(path.to_path_buf(), texture);
@@ -166,46 +167,47 @@ mod tests {
 
     fn decode_file(name: &str, mode: ProcessMode) -> DecodedImage {
         let bytes = std::fs::read(texture_path(name)).expect("texture file readable");
-        decode_bmp(&bytes, mode).expect("BMP decodes")
+        decode_image(&bytes, mode).expect("image decodes")
     }
 
     #[test]
-    fn steel_bmp_decodes_to_known_pixels() {
-        let img = decode_file("Steel.bmp", ProcessMode::NoAlpha);
+    fn steel_png_decodes_to_known_pixels() {
+        // Steel.png is the offline PNG conversion of the original 32x32 BMP
+        // recovered from the MSI; RGB→RGBA is lossless. Pixel values pinned
+        // against the real asset (a grey screw-plate on white).
+        let img = decode_file("Steel.png", ProcessMode::NoAlpha);
         assert_eq!((img.width, img.height), (32, 32));
         assert_eq!(img.rgba.len(), 32 * 32 * 4);
-        assert_eq!(img.pixel(0, 0), (132, 132, 132, 255));
-        assert_eq!(img.pixel(0, 31), (198, 198, 198, 255));
-        assert_eq!(img.pixel(16, 16), (132, 132, 132, 255));
-    }
-
-    #[test]
-    fn screw_bmp_decodes_to_known_pixels() {
-        let img = decode_file("Screw.bmp", ProcessMode::NoAlpha);
-        assert_eq!((img.width, img.height), (15, 15));
         assert_eq!(img.pixel(0, 0), (255, 255, 255, 255));
-        assert_eq!(img.pixel(7, 7), (90, 90, 90, 255));
+        assert_eq!(img.pixel(16, 16), (192, 192, 192, 255));
+        assert_eq!(img.pixel(8, 8), (128, 128, 128, 255));
     }
 
     #[test]
-    fn camo_big_bmp_is_npot_and_decodes_to_known_pixels() {
-        // NPOT (103x115) — proven decodable at the M0 spike; GL_REPEAT makes
-        // NPOT legal in core profile.
-        let img = decode_file("Camo big.bmp", ProcessMode::NoAlpha);
-        assert_eq!((img.width, img.height), (103, 115));
-        assert_eq!(img.pixel(0, 0), (82, 49, 0, 255));
-        assert_eq!(img.pixel(102, 0), (165, 99, 0, 255));
-        assert_eq!(img.pixel(51, 57), (0, 66, 0, 255));
+    fn building_textures_decode_opaque_rgba8() {
+        for name in ["Brick.png", "Steel.png", "Ceiling.png"] {
+            let img = decode_file(name, ProcessMode::NoAlpha);
+            assert_eq!((img.width, img.height), (32, 32), "{name}");
+            assert!(img.rgba.chunks_exact(4).all(|p| p[3] == 0xFF), "{name} must be opaque");
+        }
     }
 
     #[test]
-    fn no_alpha_forces_every_texel_opaque() {
-        let img = decode_file("Steel.bmp", ProcessMode::NoAlpha);
-        assert!(img.rgba.chunks_exact(4).all(|p| p[3] == 0xFF));
+    fn sprite_texture_carries_alpha_with_use_alpha() {
+        // The projectile/particle sprites carry a real alpha channel; UseAlpha
+        // must preserve it (at least one non-opaque texel) while NoAlpha forces
+        // every texel opaque.
+        let kept = decode_file("Smoke.png", ProcessMode::UseAlpha);
+        assert!(
+            kept.rgba.chunks_exact(4).any(|p| p[3] != 0xFF),
+            "UseAlpha must keep the sprite's transparency"
+        );
+        let forced = decode_file("Smoke.png", ProcessMode::NoAlpha);
+        assert!(forced.rgba.chunks_exact(4).all(|p| p[3] == 0xFF));
     }
 
     #[test]
     fn garbage_bytes_are_a_clean_error_not_a_panic() {
-        assert!(decode_bmp(b"not a bmp at all", ProcessMode::NoAlpha).is_err());
+        assert!(decode_image(b"not an image at all", ProcessMode::NoAlpha).is_err());
     }
 }

@@ -32,18 +32,6 @@ path = "src/main.rs"
 name = "mazegen"
 path = "src/bin/mazegen.rs"
 
-[[bin]]
-name = "cutwav"
-path = "src/bin/cutwav.rs"
-
-[[bin]]
-name = "gen_alarms"
-path = "src/bin/gen_alarms.rs"
-
-[[bin]]
-name = "gen_textures"
-path = "src/bin/gen_textures.rs"
-
 [dependencies]
 ab_glyph = "0.2.32"
 anyhow = "1.0.103"

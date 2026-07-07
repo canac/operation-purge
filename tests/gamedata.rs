@@ -176,16 +176,11 @@ tread_3d = "0x404040"
 wall_width = 1
 room_size = 10
 ceiling_height = 5
-wall_texture = "Steel.bmp"
 wall_texture_size = 1
-floor_texture = "Steel.bmp"
 floor_texture_size = 1
-ceiling_texture = "Steel.bmp"
 ceiling_texture_size = 1
 
 [sounds]
-enemy_visible_sound = "a.wav"
-targeted_sound = "b.wav"
 simultaneous_instances = 10
 
 [ui]

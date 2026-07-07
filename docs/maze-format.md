@@ -112,9 +112,11 @@ load time, not stored:
 
 ## Generating mazes
 
-The shipped `assets/MazeFiles/Small1-4.maz` were produced by the `mazegen`
-tool (`src/bin/mazegen.rs`) because no original sample mazes survive. Its
-output reloads byte-identically through the codec (pinned by tests). Run:
+The shipped `assets/MazeFiles/*.maz` are the **original mazes**, recovered
+byte-for-byte from `OperationPurge.msi` (Big1/2, BigBlank, BigRandom,
+Small1–15, SmallBlank, SmallRandom). To author *new* mazes, the `mazegen`
+tool (`src/bin/mazegen.rs`) emits files that reload byte-identically through
+the codec (pinned by tests):
 
 ```sh
 cargo run --bin mazegen

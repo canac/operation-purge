@@ -3,8 +3,67 @@
 //!
 //! Every path is an explicit `PathBuf` rooted at `assets_dir` — the port
 //! never chdirs (design §4.1, §5.1 "Config storage").
+//!
+//! [`names`] is the **compiled-in asset registry**: the game ships a fixed
+//! set of textures and sounds (recovered from `OperationPurge.msi`), so their
+//! filenames are baked in here rather than read from `GameData.toml` (user
+//! decision — same rationale as [`super::builtin`]). Everything is stored in
+//! one standard format: textures are PNG RGBA8, sounds are 16-bit signed PCM
+//! mono WAV (converted offline from the originals; see the README).
 
 use std::path::{Path, PathBuf};
+
+/// The game's fixed asset filenames (design §4.6). Baked in — the running
+/// game never reads these names from data. The originals assigned them in
+/// the shipped `GameData.xml`; this port hardcodes that assignment.
+pub mod names {
+    // --- Textures (PNG RGBA8, under `Textures/`) ---
+    /// Building wall (`Brick`), floor (`Steel`), ceiling (`Ceiling`).
+    pub const WALL_TEXTURE: &str = "Brick.png";
+    pub const FLOOR_TEXTURE: &str = "Steel.png";
+    pub const CEILING_TEXTURE: &str = "Ceiling.png";
+    /// Bullet/Better-Bullet projectile sprite (Rocket had an empty texture).
+    pub const PROJECTILE_TEXTURE: &str = "Projectile.png";
+    /// Wall-impact scorch mark (all projectiles).
+    pub const HOLE_TEXTURE: &str = "Hole.png";
+    /// Particle sprite (every particle type used this one texture).
+    pub const SMOKE_TEXTURE: &str = "Smoke.png";
+
+    // --- Sounds (16-bit PCM mono WAV, under `Sounds/`) ---
+    /// The two alarm loops (`SoundsOptions`).
+    pub const ENEMY_VISIBLE_SOUND: &str = "FastAlarm.wav";
+    pub const TARGETED_SOUND: &str = "Alarm.wav";
+    /// Per-weapon fire/collision + robot destroy (per-type in the original;
+    /// the assignment is fixed here: Bullet/Better-Bullet use the Bullet
+    /// pair, Rocket the Rocket pair, every robot uses `Destroy`).
+    pub const BULLET_FIRE_SOUND: &str = "BulletFire.wav";
+    pub const BULLET_COLLISION_SOUND: &str = "BulletCollision.wav";
+    pub const ROCKET_FIRE_SOUND: &str = "RocketFire.wav";
+    pub const ROCKET_COLLISION_SOUND: &str = "RocketCollision.wav";
+    pub const DESTROY_SOUND: &str = "Destroy.wav";
+
+    /// Every sound the game plays — the app preloads exactly this set once
+    /// at startup (alarms first, so their `ClipId`s are 0 and 1).
+    pub const ALL_SOUNDS: &[&str] = &[
+        ENEMY_VISIBLE_SOUND,
+        TARGETED_SOUND,
+        BULLET_FIRE_SOUND,
+        BULLET_COLLISION_SOUND,
+        ROCKET_FIRE_SOUND,
+        ROCKET_COLLISION_SOUND,
+        DESTROY_SOUND,
+    ];
+
+    /// Every texture the game uploads — used by the on-disk asset guard test.
+    pub const ALL_TEXTURES: &[&str] = &[
+        WALL_TEXTURE,
+        FLOOR_TEXTURE,
+        CEILING_TEXTURE,
+        PROJECTILE_TEXTURE,
+        HOLE_TEXTURE,
+        SMOKE_TEXTURE,
+    ];
+}
 
 /// Resolved asset subdirectories, joined once at startup.
 pub struct AssetDirs {

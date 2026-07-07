@@ -286,9 +286,10 @@ mod tests {
 
     #[test]
     fn pattern_matches_the_shipped_mazes() {
-        // The shipped pool is Small1..Small4.maz.
+        // The shipped pool is the full original set recovered from the MSI:
+        // Big1/2, BigBlank, BigRandom, Small1..Small15, SmallBlank, SmallRandom.
         let n = update_pattern_info("MazeFiles/*.maz", &assets());
-        assert_eq!(n, 4, "Small1-4.maz should match the default glob");
+        assert_eq!(n, 21, "all shipped .maz files should match the default glob");
     }
 
     #[test]
@@ -306,7 +307,7 @@ mod tests {
         // type '*').
         ng.pattern = "MazeFiles/*.maz".into();
         ng.refresh_matches(&assets());
-        assert_eq!(ng.match_count(), 4);
+        assert_eq!(ng.match_count(), 21);
     }
 
     #[test]

@@ -14,7 +14,6 @@
 pub mod spatial;
 pub mod voice;
 
-use crate::ids::{ProjectileTypeId, RobotTypeId};
 use glam::Vec3;
 use spatial::AudioListener;
 use std::collections::HashMap;
@@ -338,47 +337,25 @@ impl<B: SoundBackend> SpatialSounds<B> {
 
 /// Decode a WAV file into a kira `StaticSoundData` (design §5.4).
 ///
-/// PARITY: `cWaveFile` loaded whole 8-bit-unsigned / 16-bit-signed mono PCM
-/// (typically 22050 Hz) into a DirectSound secondary buffer. hound reads
-/// 8-bit unsigned as signed (`x - 128`), matching the original's playback.
-/// Stereo files are kept as-is; anything else normalizes per bit depth.
+/// Every shipped clip is normalized offline to the standard format —
+/// **16-bit signed PCM, mono** (see the README) — so this reads `i16` samples
+/// directly with no per-format branch. kira resamples each clip's native
+/// sample rate to the device rate at playback. This preserves the original's
+/// behavior: `cWaveFile` loaded whole mono PCM into a DirectSound buffer.
 #[cfg(not(test))]
 pub fn decode_wav(path: &Path) -> Result<kira::sound::static_sound::StaticSoundData, AudioError> {
     use kira::Frame;
 
-    let reader = hound::WavReader::open(path).map_err(|e| map_hound_err(path, e))?;
-    let spec = reader.spec();
-    let channels = spec.channels.max(1) as usize;
-    let divisor = match spec.sample_format {
-        hound::SampleFormat::Float => 1.0,
-        hound::SampleFormat::Int => (1i64 << (spec.bits_per_sample.max(1) - 1)) as f32,
-    };
-
-    let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Int => reader
-            .into_samples::<i32>()
-            .map(|s| s.map(|v| v as f32 / divisor))
-            .collect::<Result<_, _>>()
-            .map_err(|e| map_hound_err(path, e))?,
-        hound::SampleFormat::Float => reader
-            .into_samples::<f32>()
-            .collect::<Result<_, _>>()
-            .map_err(|e| map_hound_err(path, e))?,
-    };
-
-    let frames: Vec<Frame> = samples
-        .chunks(channels)
-        .map(|c| {
-            if channels >= 2 {
-                Frame::new(c[0], c.get(1).copied().unwrap_or(c[0]))
-            } else {
-                Frame::from_mono(c[0])
-            }
-        })
-        .collect();
+    let mut reader = hound::WavReader::open(path).map_err(|e| map_hound_err(path, e))?;
+    let sample_rate = reader.spec().sample_rate;
+    let frames: Vec<Frame> = reader
+        .samples::<i16>()
+        .map(|s| s.map(|v| Frame::from_mono(v as f32 / 32768.0)))
+        .collect::<Result<_, _>>()
+        .map_err(|e| map_hound_err(path, e))?;
 
     Ok(kira::sound::static_sound::StaticSoundData {
-        sample_rate: spec.sample_rate,
+        sample_rate,
         frames: frames.into(),
         settings: kira::sound::static_sound::StaticSoundSettings::default(),
         slice: None,
@@ -470,35 +447,6 @@ impl SoundBackend for KiraBackend {
     fn is_playing(&self, handle: &Self::Handle) -> bool {
         handle.state() == kira::sound::PlaybackState::Playing
     }
-}
-
-/// Resolve the per-event 3D sound clips a `World` will emit
-/// (fire/collision/destroy), so the app can preload them once. Returned as
-/// `(robot destroy sounds, projectile fire/collision sounds)` — empty
-/// strings (the original's `""` sentinel) are skipped.
-///
-/// This is a thin data helper; the actual preloading + `register_clip`
-/// wiring lives in the app (M8 integration).
-pub fn per_event_sound_names(
-    game_data: &crate::data::GameData,
-) -> (
-    HashMap<RobotTypeId, String>,
-    HashMap<ProjectileTypeId, (String, String)>,
-) {
-    let mut robot = HashMap::new();
-    for (i, rt) in game_data.robot_types.iter().enumerate() {
-        if !rt.destroy_sound.is_empty() {
-            robot.insert(RobotTypeId(i as u32), rt.destroy_sound.clone());
-        }
-    }
-    let mut proj = HashMap::new();
-    for (i, pt) in game_data.projectile_types.iter().enumerate() {
-        proj.insert(
-            ProjectileTypeId(i as u32),
-            (pt.fire_sound.clone(), pt.collision_sound.clone()),
-        );
-    }
-    (robot, proj)
 }
 
 #[cfg(test)]

@@ -46,7 +46,6 @@ fn robot_type(
         health_start,
         projectile_armor: 1.0,
         crash_armor,
-        destroy_sound: String::new(),
         destroy_effect: None,
         projectile_data,
     }
@@ -413,6 +412,8 @@ fn scripted_battle_is_deterministic_and_terminates() {
 
 // Pinned from a reference run (Small2.maz, game def 0, seed 4242, dt=1/60):
 // the enemy team is wiped by the projectile spray while the active team's
-// Machine Gunner survives -> Won at tick 4426.
-const SCRIPTED_TERMINAL_TICK: u32 = 4426;
+// Machine Gunner survives -> Won at tick 1599. (Re-pinned after Small2.maz was
+// replaced with the true original recovered from the MSI — the old value 4426
+// was measured against a reconstructed maze with different wall geometry.)
+const SCRIPTED_TERMINAL_TICK: u32 = 1599;
 const SCRIPTED_TERMINAL_STATUS: Status = Status::Won;

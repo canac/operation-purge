@@ -3,6 +3,12 @@
 //! User decision: these two tiny fixed-value text files are hardcoded as
 //! Rust `const`s instead of being read at runtime — no parser, no file,
 //! no missing-file failure path.
+//!
+//! Both files were recovered from `OperationPurge.msi` (AppData payload) and
+//! these constants are the **verified originals**, transcribed from the
+//! shipped `Objects.txt` / `LightData.txt`. They override the divergent
+//! hardcoded fallbacks in `cOperationPurge.cpp:2153-2199` (which the running
+//! game replaced by reading `Objects.txt`).
 
 /// Robot/projectile procedural-geometry dimensions.
 ///
@@ -23,12 +29,14 @@ pub struct Robot3DDimensions {
     pub projectile_resolution: u32,
 }
 
-/// `// ` cOperationPurge.cpp:2153-2199 — Objects.txt defaults (file is
-/// lost; these are the game's own hardcoded fallback values, not a
-/// reconstruction).
+/// Verified originals from the shipped `Objects.txt` (recovered from
+/// `OperationPurge.msi`). Note `barrel_resolution` (12) and
+/// `projectile_resolution` (16) differ from the `cOperationPurge.cpp:2153-2199`
+/// hardcoded fallbacks (8 and 10) — the game read `Objects.txt` at runtime,
+/// so these file values are what actually shipped.
 pub const OBJECTS: Robot3DDimensions = Robot3DDimensions {
     body_resolution: 12,
-    barrel_resolution: 8,
+    barrel_resolution: 12,
     tread_resolution: 8,
     body_radius: 0.5,
     body_height: 0.5,
@@ -37,7 +45,7 @@ pub const OBJECTS: Robot3DDimensions = Robot3DDimensions {
     tread_radius: 0.2,
     tread_width: 0.3,
     tread_length: 0.6,
-    projectile_resolution: 10,
+    projectile_resolution: 16,
 };
 
 /// Point-light attenuation coefficients: `att = 1 / (a0 + a1*d + a2*d^2)`.
@@ -48,13 +56,11 @@ pub struct LightAttenuation {
     pub a2: f32,
 }
 
-/// `// ` `LightData.txt` was lost entirely; these values are
-/// **reconstructed** (design §4.3) and tuned against help-doc screenshots
-/// at M5 — labeled reconstructed here and in the README, not verified
-/// originals.
+/// Verified originals from the shipped `LightData.txt` (recovered from
+/// `OperationPurge.msi`): `att = 1 / (0.5 + 0.25*d)`.
 pub const LIGHT_DATA: LightAttenuation = LightAttenuation {
-    a0: 1.0,
-    a1: 0.02,
+    a0: 0.5,
+    a1: 0.25,
     a2: 0.0,
 };
 
@@ -66,8 +72,9 @@ mod tests {
     /// (design §4.3).
     #[test]
     fn objects_values_are_pinned() {
+        // Verified against the recovered Objects.txt.
         assert_eq!(OBJECTS.body_resolution, 12);
-        assert_eq!(OBJECTS.barrel_resolution, 8);
+        assert_eq!(OBJECTS.barrel_resolution, 12);
         assert_eq!(OBJECTS.tread_resolution, 8);
         assert_eq!(OBJECTS.body_radius, 0.5);
         assert_eq!(OBJECTS.body_height, 0.5);
@@ -76,13 +83,14 @@ mod tests {
         assert_eq!(OBJECTS.tread_radius, 0.2);
         assert_eq!(OBJECTS.tread_width, 0.3);
         assert_eq!(OBJECTS.tread_length, 0.6);
-        assert_eq!(OBJECTS.projectile_resolution, 10);
+        assert_eq!(OBJECTS.projectile_resolution, 16);
     }
 
     #[test]
     fn light_data_values_are_pinned() {
-        assert_eq!(LIGHT_DATA.a0, 1.0);
-        assert_eq!(LIGHT_DATA.a1, 0.02);
+        // Verified against the recovered LightData.txt.
+        assert_eq!(LIGHT_DATA.a0, 0.5);
+        assert_eq!(LIGHT_DATA.a1, 0.25);
         assert_eq!(LIGHT_DATA.a2, 0.0);
     }
 }

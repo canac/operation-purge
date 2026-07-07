@@ -57,16 +57,11 @@ GameData {
         wall_width: 1.0,
         room_size: 10.0,
         ceiling_height: 5.0,
-        wall_texture: "Camo big.bmp",
         wall_texture_size: 1.0,
-        floor_texture: "Steel.bmp",
         floor_texture_size: 0.1,
-        ceiling_texture: "Screw.bmp",
         ceiling_texture_size: 1.0,
     },
     sounds: SoundsOptions {
-        enemy_visible_sound: "FastAlarm.wav",
-        targeted_sound: "Alarm.wav",
         simultaneous_instances: 10,
     },
     ui: UiOptions {
@@ -1084,7 +1079,6 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 25.0,
-            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1125,7 +1119,6 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 25.0,
-            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1166,7 +1159,6 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 25.0,
-            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1186,7 +1178,6 @@ GameData {
             health_start: 5.0,
             projectile_armor: 1.0,
             crash_armor: 1.0,
-            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1206,7 +1197,6 @@ GameData {
             health_start: 50.0,
             projectile_armor: 5.0,
             crash_armor: 25.0,
-            destroy_sound: "Explosion.wav",
             destroy_effect: Some(
                 EffectDefId(
                     4,
@@ -1263,10 +1253,6 @@ GameData {
             gravity_accel: 10.0,
             size: 0.05,
             hole_size: 0.1,
-            texture: "Projectile.png",
-            hole_texture: "Hole.png",
-            fire_sound: "MachineGun.wav",
-            collision_sound: "Explosion.wav",
             fire_effect: Some(
                 EffectDefId(
                     0,
@@ -1293,10 +1279,6 @@ GameData {
             gravity_accel: 10.0,
             size: 0.1,
             hole_size: 0.25,
-            texture: "",
-            hole_texture: "Hole.png",
-            fire_sound: "RocketLaunch.wav",
-            collision_sound: "Explosion.wav",
             fire_effect: None,
             travel_effect: Some(
                 EffectDefId(
@@ -1323,10 +1305,6 @@ GameData {
             gravity_accel: 0.0,
             size: 0.05,
             hole_size: 0.15,
-            texture: "Projectile.png",
-            hole_texture: "Hole.png",
-            fire_sound: "MachineGun.wav",
-            collision_sound: "Explosion.wav",
             fire_effect: Some(
                 EffectDefId(
                     0,
@@ -1415,7 +1393,6 @@ GameData {
     particle_types: [
         ParticleType {
             name: "Bullet fire",
-            texture_file: "Smoke.png",
             lifetime: 0.1,
             lifetime_variance: 0.03,
             stages: [
@@ -1450,7 +1427,6 @@ GameData {
         },
         ParticleType {
             name: "Bullet collision",
-            texture_file: "Smoke.png",
             lifetime: 0.1,
             lifetime_variance: 0.03,
             stages: [
@@ -1485,7 +1461,6 @@ GameData {
         },
         ParticleType {
             name: "Rocket travel flame",
-            texture_file: "Smoke.png",
             lifetime: 0.005,
             lifetime_variance: 0.002,
             stages: [
@@ -1530,7 +1505,6 @@ GameData {
         },
         ParticleType {
             name: "Rocket collision",
-            texture_file: "Smoke.png",
             lifetime: 0.2,
             lifetime_variance: 0.1,
             stages: [
@@ -1575,7 +1549,6 @@ GameData {
         },
         ParticleType {
             name: "Robot destroy fireball",
-            texture_file: "Smoke.png",
             lifetime: 0.2,
             lifetime_variance: 0.1,
             stages: [
@@ -1620,7 +1593,6 @@ GameData {
         },
         ParticleType {
             name: "Robot destroy debris",
-            texture_file: "Smoke.png",
             lifetime: 0.5,
             lifetime_variance: 0.2,
             stages: [

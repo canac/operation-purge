@@ -59,26 +59,26 @@ pub struct ColorsOptions {
 
 /// `[building]` — `tBuildingOptions` (libs-map §2.2, §5.7 for shipped
 /// defaults: wall width 1.0, room size 10.0, ceiling height 5.0).
+///
+/// The wall/floor/ceiling texture *filenames* are not stored here — they are
+/// compiled in ([`assets::names`], user decision). Only the per-surface UV
+/// texture *sizes* remain data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildingOptions {
     pub wall_width: f32,
     pub room_size: f32,
     pub ceiling_height: f32,
-    pub wall_texture: String,
     pub wall_texture_size: f32,
-    pub floor_texture: String,
     pub floor_texture_size: f32,
-    pub ceiling_texture: String,
     pub ceiling_texture_size: f32,
 }
 
-/// `[sounds]` — `tSoundsOptions`.
+/// `[sounds]` — `tSoundsOptions`. The two alarm filenames are compiled in
+/// ([`assets::names`]); only the shared voice-pool size remains data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SoundsOptions {
-    pub enemy_visible_sound: String,
-    pub targeted_sound: String,
     pub simultaneous_instances: u32,
 }
 
@@ -190,7 +190,6 @@ pub struct RobotType {
     pub health_start: f32,
     pub projectile_armor: f32,
     pub crash_armor: f32,
-    pub destroy_sound: String,
     #[serde(deserialize_with = "values::deserialize_ref")]
     pub destroy_effect: Option<EffectDefId>,
     #[serde(default)]
@@ -227,12 +226,6 @@ pub struct ProjectileType {
     pub gravity_accel: f32,
     pub size: f32,
     pub hole_size: f32,
-    /// May be empty (libs-map §2.4: `<TextureFile Name="Texture"></TextureFile>`
-    /// is present in the sample data).
-    pub texture: String,
-    pub hole_texture: String,
-    pub fire_sound: String,
-    pub collision_sound: String,
     #[serde(deserialize_with = "values::deserialize_ref")]
     pub fire_effect: Option<EffectDefId>,
     #[serde(deserialize_with = "values::deserialize_ref")]
@@ -314,7 +307,6 @@ pub struct ParticleStage {
 #[serde(deny_unknown_fields)]
 pub struct ParticleType {
     pub name: String,
-    pub texture_file: String,
     pub lifetime: f32,
     pub lifetime_variance: f32,
     #[serde(default)]

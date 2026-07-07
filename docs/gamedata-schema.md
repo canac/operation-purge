@@ -57,16 +57,18 @@ Notes:
 
 ### `[building]`
 
-Maze→world scaling and surface textures. `wall_width`, `room_size`,
+Maze→world scaling and UV tiling. `wall_width`, `room_size`,
 `ceiling_height` are the extrusion constants (see
-[maze-format.md](maze-format.md)); the `*_texture` keys name files under
-`Textures/` and the `*_texture_size` keys are UV tiling scales.
+[maze-format.md](maze-format.md)); the `*_texture_size` keys are UV tiling
+scales. The wall/floor/ceiling texture *filenames* are **not** data — they
+are compiled in (`src/data/assets.rs`); see the
+[README asset section](../README.md#assets).
 
 ### `[sounds]`
 
-Alarm loop clips and the DS3D voice budget: `enemy_visible_sound`,
-`targeted_sound` (files under `Sounds/`), `simultaneous_instances`
-(concurrent-voice cap).
+The DS3D voice budget: `simultaneous_instances` (concurrent-voice cap). The
+two alarm-loop clip *filenames* are compiled in (`src/data/assets.rs`), not
+data.
 
 ### `[ui]`
 
@@ -105,8 +107,8 @@ An array of selectable matches. Each has a `name`, an array of `teams`, and
 
 Chassis stats: `name`, `accel`, `brake_decel`, `friction_decel`, `max_speed`,
 `rotate_rate` (**degrees→radians**), `max_visible_dist`, `energy_start`,
-`health_start`, `projectile_armor`, `crash_armor`, `destroy_sound`,
-`destroy_effect` (`Ref` into particle effects).
+`health_start`, `projectile_armor`, `crash_armor`, `destroy_effect` (`Ref`
+into particle effects). (The destroy *sound* is compiled in, not data.)
 
 - **`[[robot_types.projectile_data]]`** (optional, repeatable) — the weapons
   this chassis carries: `projectile_type` (`Ref`), `count` (ammo),
@@ -123,10 +125,10 @@ AI behaviour tuning: `name`, `desired_speed`, `scan_delay`, `min_wall_dist`,
 ### `[[projectile_types]]`
 
 Weapon projectiles: `name`, `initial_speed`, `damage(+_variance)`,
-`gravity_accel`, `size`, `hole_size`, `texture`, `hole_texture`, `fire_sound`,
-`collision_sound`, `fire_effect` / `travel_effect` / `collision_effect`
-(each a `Ref` — `"None"` allowed), and `fire_command`
-(`{ key, control, alt, shift }` inline table).
+`gravity_accel`, `size`, `hole_size`, `fire_effect` / `travel_effect` /
+`collision_effect` (each a `Ref` — `"None"` allowed), and `fire_command`
+(`{ key, control, alt, shift }` inline table). (The projectile/hole
+*textures* and fire/collision *sounds* are compiled in, not data.)
 
 ### `[center_types.ammo]` / `[center_types.energy]` / `[center_types.health]`
 
@@ -141,8 +143,8 @@ Supply-center kinds (arrays). Each has `name`, `size`, `color`
 
 ### `[[particle_types]]`
 
-Per-particle appearance/motion: `name`, `texture_file`,
-`lifetime(+_variance)`, `inherited_velocity_factor`, `rise_speed`,
+Per-particle appearance/motion: `name` (the particle *texture* is compiled
+in, not data), `lifetime(+_variance)`, `inherited_velocity_factor`, `rise_speed`,
 `rise_acceleration`, `initial_rotation(+_variance)` (**degrees→radians**),
 `rotation_rate(+_variance)` (**degrees→radians**), and an ordered list of
 color/size stages.

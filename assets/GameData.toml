@@ -8,20 +8,17 @@ status_text_2d = "0xFFFFFF"
 barrel_3d = "0x808080"
 tread_3d = "0x404040"
 
+# Texture filenames are compiled in (src/data/assets.rs); only UV sizes are data.
 [building]
 wall_width = 1
 room_size = 10
 ceiling_height = 5
-wall_texture = "Camo big.bmp"
 wall_texture_size = 1
-floor_texture = "Steel.bmp"
 floor_texture_size = 0.1
-ceiling_texture = "Screw.bmp"
 ceiling_texture_size = 1
 
+# Alarm filenames are compiled in; only the shared voice-pool size is data.
 [sounds]
-enemy_visible_sound = "FastAlarm.wav"
-targeted_sound = "Alarm.wav"
 simultaneous_instances = 10
 
 [ui]
@@ -639,7 +636,6 @@ energy_start = 1000
 health_start = 5
 projectile_armor = 1
 crash_armor = 25
-destroy_sound = "Explosion.wav"
 destroy_effect = 4
 
 [[robot_types.projectile_data]]
@@ -666,7 +662,6 @@ energy_start = 1000
 health_start = 5
 projectile_armor = 1
 crash_armor = 25
-destroy_sound = "Explosion.wav"
 destroy_effect = 4
 
 [[robot_types.projectile_data]]
@@ -693,7 +688,6 @@ energy_start = 1000
 health_start = 5
 projectile_armor = 1
 crash_armor = 25
-destroy_sound = "Explosion.wav"
 destroy_effect = 4
 
 [[robot_types]]
@@ -708,7 +702,6 @@ energy_start = 0
 health_start = 5
 projectile_armor = 1
 crash_armor = 1
-destroy_sound = "Explosion.wav"
 destroy_effect = 4
 
 [[robot_types]]
@@ -723,7 +716,6 @@ energy_start = 1000
 health_start = 50
 projectile_armor = 5
 crash_armor = 25
-destroy_sound = "Explosion.wav"
 destroy_effect = 4
 
 [[robot_types.projectile_data]]
@@ -766,10 +758,6 @@ damage_variance = 0
 gravity_accel = 10
 size = 0.05
 hole_size = 0.1
-texture = "Projectile.png"
-hole_texture = "Hole.png"
-fire_sound = "MachineGun.wav"
-collision_sound = "Explosion.wav"
 fire_effect = 0
 travel_effect = "None"
 collision_effect = 1
@@ -783,10 +771,6 @@ damage_variance = 0
 gravity_accel = 10
 size = 0.1
 hole_size = 0.25
-texture = ""
-hole_texture = "Hole.png"
-fire_sound = "RocketLaunch.wav"
-collision_sound = "Explosion.wav"
 fire_effect = "None"
 travel_effect = 2
 collision_effect = 3
@@ -800,10 +784,6 @@ damage_variance = 0
 gravity_accel = 0
 size = 0.05
 hole_size = 0.15
-texture = "Projectile.png"
-hole_texture = "Hole.png"
-fire_sound = "MachineGun.wav"
-collision_sound = "Explosion.wav"
 fire_effect = 0
 travel_effect = "None"
 collision_effect = 1
@@ -840,7 +820,6 @@ transfer_rate = 0.1
 
 [[particle_types]]
 name = "Bullet fire"
-texture_file = "Smoke.png"
 lifetime = 0.1
 lifetime_variance = 0.03
 inherited_velocity_factor = 0
@@ -863,7 +842,6 @@ time = 1
 
 [[particle_types]]
 name = "Bullet collision"
-texture_file = "Smoke.png"
 lifetime = 0.1
 lifetime_variance = 0.03
 inherited_velocity_factor = 0
@@ -886,7 +864,6 @@ time = 1
 
 [[particle_types]]
 name = "Rocket travel flame"
-texture_file = "Smoke.png"
 lifetime = 0.005
 lifetime_variance = 0.002
 inherited_velocity_factor = 0
@@ -914,7 +891,6 @@ time = 1
 
 [[particle_types]]
 name = "Rocket collision"
-texture_file = "Smoke.png"
 lifetime = 0.2
 lifetime_variance = 0.1
 inherited_velocity_factor = 0
@@ -942,7 +918,6 @@ time = 1
 
 [[particle_types]]
 name = "Robot destroy fireball"
-texture_file = "Smoke.png"
 lifetime = 0.2
 lifetime_variance = 0.1
 inherited_velocity_factor = 0
@@ -970,7 +945,6 @@ time = 1
 
 [[particle_types]]
 name = "Robot destroy debris"
-texture_file = "Smoke.png"
 lifetime = 0.5
 lifetime_variance = 0.2
 inherited_velocity_factor = 0

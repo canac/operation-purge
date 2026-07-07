@@ -390,9 +390,10 @@ mod tests {
         let (rv, ri) = build_barrel(&d);
         // nBarrel = res*3+2 verts; res*6 tube + res*3 cap indices.
         assert_eq!(rv.len(), (d.barrel_resolution * 3 + 2) as usize);
-        assert_eq!(rv.len(), 26);
+        // res=12 -> 38 verts, 108 indices.
+        assert_eq!(rv.len(), 38);
         assert_eq!(ri.len(), (d.barrel_resolution * 6 + d.barrel_resolution * 3) as usize);
-        assert_eq!(ri.len(), 72);
+        assert_eq!(ri.len(), 108);
 
         let (tv, ti) = build_treads(&d);
         // nTread = res*16+4 verts; res*48 indices.
