@@ -353,12 +353,12 @@ impl RobotRenderer {
         let world_view = camera.world_view(world);
         unsafe {
             if let Some(loc) = prog.uniform("u_mvp") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), true, &mvp.to_row_major_array());
+                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_row_major_array());
             }
             if let Some(loc) = prog.uniform("u_world_view") {
                 gl.uniform_matrix_4_f32_slice(
                     Some(&loc),
-                    true,
+                    false,
                     &world_view.to_row_major_array(),
                 );
             }

@@ -4,9 +4,12 @@
 //! The view/projection path is built entirely from `render::d3dx` (the
 //! verbatim LH Z-up row-vector D3DX module) so no glam camera helper is
 //! ever involved: `view = LookAtLH`, `proj = PerspectiveFovLH * CLIP_FIX`
-//! (row-vector order), and every matrix uniform is uploaded with
-//! `transpose = TRUE` (design §3.2) so the GLSL does column-vector
-//! `P * V * W * pos`.
+//! (row-vector order). Every matrix uniform is uploaded as its
+//! `to_row_major_array()` bytes with `transpose = FALSE`: GL reads them
+//! column-major, so the shader's `mat4` is the transpose of our row-vector
+//! matrix — exactly what the column-vector `P * V * W * pos` needs. (The
+//! design §3.2 prescription of `transpose = TRUE` was wrong and sheared the
+//! scene; corrected in commit "Fix transposed MVP upload".)
 
 use glam::Vec3;
 
@@ -71,7 +74,7 @@ impl FreeFlyCamera {
 
     /// Projection composed with `CLIP_FIX` (row-vector order,
     /// `proj_d3d * CLIP_FIX`), giving GL clip-space `z' = 2z - w` (design
-    /// §3.2). Upload with `transpose = TRUE`.
+    /// §3.2). Upload as `to_row_major_array()` with `transpose = FALSE`.
     pub fn projection(&self, aspect: f32) -> Mat4 {
         let proj = Mat4::perspective_fov_lh(FOV_Y, aspect, Z_NEAR, self.z_far);
         proj.mul(&d3dx::clip_fix())
@@ -85,7 +88,7 @@ impl FreeFlyCamera {
 
     /// Full MVP for geometry with world matrix `world`: `world * view *
     /// proj_fixed` (row-vector; C++ left-to-right composition reads the
-    /// same). Upload with `transpose = TRUE`.
+    /// same). Upload as `to_row_major_array()` with `transpose = FALSE`.
     pub fn mvp(&self, world: &Mat4, aspect: f32) -> Mat4 {
         world.mul(&self.view()).mul(&self.projection(aspect))
     }

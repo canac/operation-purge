@@ -397,7 +397,7 @@ impl SpriteRenderer {
             self.gl.use_program(Some(prog.program));
             if let Some(loc) = prog.uniform("u_proj") {
                 self.gl
-                    .uniform_matrix_4_f32_slice(Some(&loc), true, &proj.to_row_major_array());
+                    .uniform_matrix_4_f32_slice(Some(&loc), false, &proj.to_row_major_array());
             }
             if let Some(loc) = prog.uniform("u_tex") {
                 self.gl.uniform_1_i32(Some(&loc), 0);

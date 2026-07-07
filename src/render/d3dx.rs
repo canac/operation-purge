@@ -8,8 +8,10 @@
 //!
 //! Conversion to OpenGL happens at exactly one boundary (design §3.2):
 //! `proj_final = proj_d3d * CLIP_FIX` (row-vector order), giving clip-space
-//! `z' = 2z - w` — **never** the post-divide constant `2z - 1` — and every
-//! uniform upload transposes so GLSL sees standard column-vector `P*V*W*pos`.
+//! `z' = 2z - w` — **never** the post-divide constant `2z - 1`. Uniform
+//! uploads pass the row-major bytes with `transpose = FALSE`, so GL reads
+//! them column-major (i.e. as our matrix's transpose) and the shader's
+//! standard column-vector `u_mvp * pos` reproduces the CPU's `pos * M`.
 //!
 //! ## Storage convention
 //!
@@ -18,8 +20,10 @@
 //! purely as flat f32 storage and reuses glam's "column `i`" to mean
 //! **our row `i`** (a deliberate relabeling, documented once, here). Under
 //! that mapping `to_cols_array()`/`to_cols_array_2d()` hand back exactly
-//! this matrix's 16 floats in row-major order — which is precisely the
-//! layout `glUniformMatrix4fv(..., transpose = TRUE, ...)` wants. None of
+//! this matrix's 16 floats in row-major order; fed to
+//! `glUniformMatrix4fv(..., transpose = FALSE, ...)` GL reads them as
+//! column-major, i.e. as this matrix's transpose (what a column-vector
+//! shader needs). None of
 //! `glam::Mat4`'s own camera/rotation helper *methods* are used (they are
 //! right-handed/column-vector and would silently produce the wrong
 //! matrices); only its storage is borrowed.
@@ -68,8 +72,10 @@ impl Mat4 {
         self.row(row)[col]
     }
 
-    /// The 16 elements in row-major order — exactly the layout
-    /// `glUniformMatrix4fv(..., transpose = TRUE, ...)` expects.
+    /// The 16 elements in row-major order. Upload with
+    /// `glUniformMatrix4fv(..., transpose = FALSE, ...)`: GL then reads this
+    /// as column-major (our matrix's transpose), which is what the
+    /// column-vector shaders (`u_mvp * pos`) need.
     pub fn to_row_major_array(&self) -> [f32; 16] {
         self.0.to_cols_array()
     }

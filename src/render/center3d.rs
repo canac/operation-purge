@@ -112,10 +112,10 @@ impl CenterRenderer {
         unsafe {
             gl.use_program(Some(prog.program));
             if let Some(loc) = prog.uniform("u_mvp") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), true, &mvp.to_row_major_array());
+                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_row_major_array());
             }
             if let Some(loc) = prog.uniform("u_world_view") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), true, &world_view.to_row_major_array());
+                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &world_view.to_row_major_array());
             }
             if let Some(loc) = prog.uniform("u_material") {
                 let m = shaders::material_uniform(data.color);
