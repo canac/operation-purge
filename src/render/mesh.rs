@@ -205,23 +205,37 @@ impl<V: VertexLayout> Mesh<V> {
         Ok(())
     }
 
-    /// Draws the index range `[start, start + count)` as `GL_TRIANGLES`.
+    /// Draws the index range `[start, start + count)` with `primitive`.
     /// Runtime-only; no-op if not yet uploaded. `start`/`count` are index
-    /// (not triangle) counts — matches the building's three draw ranges.
-    pub fn draw_range(&self, start: usize, count: usize) {
+    /// counts.
+    fn draw_primitive(&self, primitive: u32, start: usize, count: usize) {
         let Some(h) = self.gl_handles.as_ref() else {
             return;
         };
         unsafe {
             h.gl.bind_vertex_array(Some(h.vao));
             h.gl.draw_elements(
-                glow::TRIANGLES,
+                primitive,
                 count as i32,
                 glow::UNSIGNED_SHORT,
                 (start * std::mem::size_of::<u16>()) as i32,
             );
             h.gl.bind_vertex_array(None);
         }
+    }
+
+    /// Draws the index range `[start, start + count)` as `GL_TRIANGLES`.
+    /// Runtime-only; no-op if not yet uploaded. `start`/`count` are index
+    /// (not triangle) counts — matches the building's three draw ranges.
+    pub fn draw_range(&self, start: usize, count: usize) {
+        self.draw_primitive(glow::TRIANGLES, start, count);
+    }
+
+    /// Draws the index range `[start, start + count)` as `GL_LINES` (pairs).
+    /// Runtime-only; no-op if not yet uploaded. Used by the 2D-map wall
+    /// outline + crosshair (`render::overlay`).
+    pub fn draw_lines_range(&self, start: usize, count: usize) {
+        self.draw_primitive(glow::LINES, start, count);
     }
 
     /// Draws all indices as `GL_TRIANGLES`. Runtime-only.

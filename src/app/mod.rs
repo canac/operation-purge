@@ -37,6 +37,7 @@ use crate::maze::Maze;
 use crate::render::building3d::BuildingRenderer;
 use crate::render::camera::WindingGate;
 use crate::render::center3d::{CenterRenderData, CenterRenderer};
+use crate::render::overlay::{MapColors, MapMode, MapRobotData, Overlay2DRenderer};
 use crate::render::robot3d::{RobotRenderData, RobotRenderer};
 use crate::render::shaders::{compile_all, Programs};
 use crate::render::text::{GlyphAtlas, TextRenderer};
@@ -90,6 +91,7 @@ pub struct AppRunner {
     building: Option<BuildingRenderer>,
     robot: Option<RobotRenderer>,
     center: Option<CenterRenderer>,
+    overlay: Option<Overlay2DRenderer>,
     gate: WindingGate,
     // The live game (world + screens + camera + speed + timers).
     game: Option<Game>,
@@ -142,6 +144,7 @@ impl AppRunner {
             building: None,
             robot: None,
             center: None,
+            overlay: None,
             gate: WindingGate::default(),
             game: None,
             audio: None,
@@ -278,6 +281,10 @@ impl AppRunner {
         match RobotRenderer::new(ctx.clone(), &crate::data::builtin::OBJECTS) {
             Ok(r) => self.robot = Some(r),
             Err(e) => self.init_error = Some(format!("robot mesh failed: {e}")),
+        }
+        match Overlay2DRenderer::new(ctx.clone(), &building, &crate::data::builtin::OBJECTS) {
+            Ok(o) => self.overlay = Some(o),
+            Err(e) => self.init_error = Some(format!("2D map mesh failed: {e}")),
         }
         match CenterRenderer::new(ctx) {
             Ok(c) => self.center = Some(c),
@@ -473,6 +480,22 @@ impl AppRunner {
             None
         };
 
+        // 2D-map snapshot (design §5.5): whether the map is showing (Map2D
+        // screen), whether the F1 minimap is enabled in 3D, and the per-robot
+        // markers + palette. Captured under the same immutable game borrow.
+        let active_game = self.game.as_ref().filter(|_| new_game_lines.is_none());
+        let in_2d = active_game.is_some_and(Game::in_2d);
+        let show_minimap = active_game.is_some_and(|g| g.show_map);
+        let map_robots = active_game
+            .map(|game| self.collect_map_render_data(game))
+            .unwrap_or_default();
+        let map_colors = self.game_data.as_ref().map(|d| MapColors {
+            background: d.colors.background_2d,
+            wall: d.colors.wall_2d,
+            barrel: d.colors.barrel_2d,
+            crosshair: d.colors.crosshair_2d,
+        });
+
         let Some(window) = self.window.as_mut() else {
             return;
         };
@@ -482,7 +505,15 @@ impl AppRunner {
         let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
         let decision = self.gate.decision();
 
-        if let Some((camera, robot_data, center_data, _hud, _prompt)) = scene.as_ref() {
+        if in_2d {
+            // Full-screen 2D map (design §5.5): background, walls, robot
+            // markers + health bars, center crosshair. Replaces the 3D scene.
+            if let (Some(overlay), Some(programs), Some(colors)) =
+                (self.overlay.as_ref(), self.programs.as_ref(), map_colors)
+            {
+                overlay.render_map(&mut window.gl, programs, MapMode::Full2D, &map_robots, colors);
+            }
+        } else if let Some((camera, robot_data, center_data, _hud, _prompt)) = scene.as_ref() {
             if let (Some(building), Some(programs)) =
                 (self.building.as_ref(), self.programs.as_ref())
             {
@@ -497,6 +528,21 @@ impl AppRunner {
             {
                 for data in center_data {
                     center.render(&mut window.gl, programs, camera, aspect, decision, data);
+                }
+            }
+            // F1 minimap overlay (`m_bShowMap`): same map, corner viewport,
+            // no crosshair. Drawn on top of the 3D scene.
+            if show_minimap {
+                if let (Some(overlay), Some(programs), Some(colors)) =
+                    (self.overlay.as_ref(), self.programs.as_ref(), map_colors)
+                {
+                    overlay.render_map(
+                        &mut window.gl,
+                        programs,
+                        MapMode::Minimap,
+                        &map_robots,
+                        colors,
+                    );
                 }
             }
         }
@@ -619,6 +665,44 @@ impl AppRunner {
                 orientation: c.orientation_angle,
                 size: c.size,
                 color: c.color,
+            })
+            .collect()
+    }
+
+    /// Per-robot inputs for the 2D map ([`render::overlay`]). The active
+    /// robot's body marker is tinted `observer_2d`; every other robot uses
+    /// its team color. Health fraction (`health / health_start`) feeds the
+    /// green/red bar.
+    fn collect_map_render_data(&self, game: &Game) -> Vec<MapRobotData> {
+        let data = &game.world.game_data;
+        let def = &data.game_definitions[game.world.game_def.get() as usize];
+        let observer = data.colors.observer_2d;
+        game.world
+            .robots
+            .iter()
+            .filter(|(_, r)| !r.is_dead())
+            .map(|(id, r)| {
+                let team_color = def
+                    .teams
+                    .get(r.team.get() as usize)
+                    .map(|t| t.color)
+                    .unwrap_or(Rgba::new(0.3, 0.5, 1.0, 1.0));
+                let marker_color = if game.active_robot == Some(*id) {
+                    observer
+                } else {
+                    team_color
+                };
+                let health_fraction = if r.health_start > 0.0 {
+                    (r.health / r.health_start).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                MapRobotData {
+                    position: r.position,
+                    direction: r.direction,
+                    health_fraction,
+                    marker_color,
+                }
             })
             .collect()
     }

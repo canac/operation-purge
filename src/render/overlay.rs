@@ -13,13 +13,19 @@
 //! 2D barrel radius = 3D×2, length = 3D + bodyRadius
 //! (`cOperationPurge.cpp:2200-2203`).
 
+use std::rc::Rc;
+
 use glam::{Vec2, Vec3};
+use glow::HasContext;
 
 use crate::data::builtin::Robot3DDimensions;
+use crate::error::GlError;
 use crate::maze::building::Building;
 use crate::math::Rgba;
 use crate::render::d3dx::Mat4;
-use crate::render::mesh::VertexPos;
+use crate::render::gl::{GlState, WindingDecision};
+use crate::render::mesh::{Mesh, VertexPos};
+use crate::render::shaders::{Program, Programs};
 
 /// 2D map viewport (`m_fBuilding2DOffset`/`m_fBuilding2DSize`,
 /// `cOperationPurge.cpp:74-75`).
@@ -235,6 +241,225 @@ pub fn build_map_geometry(building: &Building) -> MapGeometry {
     }
 }
 
+/// The 2D map's single index buffer + draw ranges: the wall outline (a
+/// `LINES` list, `[0, wall_line_count)`) followed by the background quad
+/// (`TRIANGLES`, `[background_start, background_start + 6)`). Flattens
+/// [`build_map_geometry`] so one [`Mesh`] draws both primitives.
+pub struct MapMesh {
+    pub vertices: Vec<VertexPos>,
+    pub indices: Vec<u16>,
+    pub wall_line_count: usize,
+    pub background_start: usize,
+}
+
+/// Builds the combined 2D-map mesh (walls + background quad) for a building.
+pub fn build_map_mesh(building: &Building) -> MapMesh {
+    let geo = build_map_geometry(building);
+    let wall_line_count = geo.wall_line_indices.len();
+    let mut indices = geo.wall_line_indices;
+    let background_start = indices.len();
+    indices.extend_from_slice(&geo.background_indices);
+    MapMesh {
+        vertices: geo.vertices,
+        indices,
+        wall_line_count,
+        background_start,
+    }
+}
+
+/// The 12 triangle-list indices for the robot marker: the body square (verts
+/// 0-3) and the barrel (verts 4-7), each a `TRIANGLESTRIP` unwrapped to two
+/// triangles. Body = `[0, 6)`, barrel = `[6, 12)` — drawn in separate colors.
+pub fn robot_marker_indices() -> [u16; 12] {
+    [0, 1, 2, 2, 1, 3, 4, 5, 6, 6, 5, 7]
+}
+
+/// The 8 `LINES` indices (4 segments) for the crosshair.
+pub fn crosshair_line_indices() -> [u16; 8] {
+    [0, 1, 2, 3, 4, 5, 6, 7]
+}
+
+/// A centered unit quad (`x, y ∈ [-0.5, 0.5]`) reused for every health-bar
+/// segment; scaled + placed per segment by [`health_bar_segment_matrix`].
+pub fn health_bar_quad_vertices() -> [VertexPos; 4] {
+    let p = |x: f32, y: f32| VertexPos {
+        position: [x, y, 0.0],
+    };
+    [p(-0.5, -0.5), p(0.5, -0.5), p(-0.5, 0.5), p(0.5, 0.5)]
+}
+
+/// The two-triangle indices for [`health_bar_quad_vertices`].
+pub fn health_bar_quad_indices() -> [u16; 6] {
+    [0, 1, 2, 2, 1, 3]
+}
+
+/// World matrix placing the robot marker (which points +X in local space)
+/// at the robot's position + heading: `RotZ(direction) * Translate(pos)`
+/// (row-vector order, matching [`super::center3d::world_matrix`]).
+pub fn robot_marker_matrix(direction: f32, pos: Vec2) -> Mat4 {
+    Mat4::rotation_z(direction).mul(&Mat4::translation(Vec3::new(pos.x, pos.y, 0.0)))
+}
+
+/// World matrix placing the centered health-bar quad for one segment: scale
+/// to the segment's `width` × [`HEALTH_BAR_HEIGHT`], then translate so it
+/// sits at `offset_x` within the bar, centered on the robot in X and just
+/// above its marker in Y (`Scale * Translate`, row-vector order).
+pub fn health_bar_segment_matrix(seg: &HealthSegment, robot_pos: Vec2, body_radius: f32) -> Mat4 {
+    let above = robot_pos.y + body_radius + HEALTH_BAR_HEIGHT;
+    Mat4::scaling(Vec3::new(seg.width, HEALTH_BAR_HEIGHT, 1.0)).mul(&Mat4::translation(Vec3::new(
+        robot_pos.x + seg.offset_x,
+        above,
+        0.0,
+    )))
+}
+
+/// The four map colors pulled from `[colors]` (`background_2d`, `wall_2d`,
+/// `barrel_2d`, `crosshair_2d`). The per-robot body color (team, or
+/// `observer_2d` for the active robot) travels on [`MapRobotData`].
+#[derive(Copy, Clone, Debug)]
+pub struct MapColors {
+    pub background: Rgba,
+    pub wall: Rgba,
+    pub barrel: Rgba,
+    pub crosshair: Rgba,
+}
+
+/// Per-robot inputs for the 2D map: pose, health fraction, and the resolved
+/// body-marker color (team color, or the observer tint for the active robot).
+#[derive(Copy, Clone, Debug)]
+pub struct MapRobotData {
+    pub position: Vec2,
+    pub direction: f32,
+    pub health_fraction: f32,
+    pub marker_color: Rgba,
+}
+
+/// Owns the uploaded 2D-map meshes and draws the full-screen map or the
+/// in-game minimap with `prog_flat`. The map mesh is per-building (rebuilt
+/// when a new game starts); the marker / crosshair / health-bar meshes are
+/// static. Runtime-only (needs a current GL context).
+pub struct Overlay2DRenderer {
+    map: Mesh<VertexPos>,
+    map_wall_line_count: usize,
+    map_background_start: usize,
+    marker: Mesh<VertexPos>,
+    marker_dims: Robot2DDimensions,
+    crosshair: Mesh<VertexPos>,
+    health_quad: Mesh<VertexPos>,
+    room_size: f32,
+    building_size: Vec2,
+}
+
+impl Overlay2DRenderer {
+    pub fn new(
+        gl: Rc<glow::Context>,
+        building: &Building,
+        dims: &Robot3DDimensions,
+    ) -> Result<Self, GlError> {
+        let mm = build_map_mesh(building);
+        let mut map = Mesh::new(mm.vertices, mm.indices)?;
+        map.upload(gl.clone())?;
+
+        let marker_dims = Robot2DDimensions::from_3d(dims);
+        let mut marker = Mesh::new(
+            robot_marker_vertices(&marker_dims).to_vec(),
+            robot_marker_indices().to_vec(),
+        )?;
+        marker.upload(gl.clone())?;
+
+        let mut crosshair = Mesh::new(
+            crosshair_vertices().to_vec(),
+            crosshair_line_indices().to_vec(),
+        )?;
+        crosshair.upload(gl.clone())?;
+
+        let mut health_quad = Mesh::new(
+            health_bar_quad_vertices().to_vec(),
+            health_bar_quad_indices().to_vec(),
+        )?;
+        health_quad.upload(gl)?;
+
+        let size = building.size();
+        Ok(Self {
+            map,
+            map_wall_line_count: mm.wall_line_count,
+            map_background_start: mm.background_start,
+            marker,
+            marker_dims,
+            crosshair,
+            health_quad,
+            room_size: building.room_size,
+            building_size: Vec2::new(size.x, size.y),
+        })
+    }
+
+    /// Sets `prog_flat`'s `u_mvp` + `u_color` uniforms for one draw.
+    fn set_flat(gl: &glow::Context, prog: &Program, mvp: &Mat4, color: Rgba) {
+        unsafe {
+            gl.use_program(Some(prog.program));
+            if let Some(loc) = prog.uniform("u_mvp") {
+                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_row_major_array());
+            }
+            if let Some(loc) = prog.uniform("u_color") {
+                gl.uniform_4_f32(Some(&loc), color.r, color.g, color.b, color.a);
+            }
+        }
+    }
+
+    /// Draws the map: background quad, wall outline, each robot (body marker
+    /// in its resolved color, barrel in `barrel_2d`, green/red health bar),
+    /// and — for [`MapMode::Full2D`] only — the center crosshair.
+    pub fn render_map(
+        &self,
+        gl_state: &mut GlState,
+        programs: &Programs,
+        mode: MapMode,
+        robots: &[MapRobotData],
+        colors: MapColors,
+    ) {
+        gl_state.set_winding(WindingDecision::CullNone);
+        let gl = Rc::clone(gl_state.context());
+        let prog = &programs.flat;
+
+        let (screen_off, screen_size) = viewport(mode);
+        let vis_size = Vec2::new(
+            self.building_size.x / self.room_size,
+            self.building_size.y / self.room_size,
+        );
+        let world = map_world_matrix(self.room_size, Vec2::ZERO, vis_size, screen_off, screen_size);
+
+        // Filled background, then the wall outline on top.
+        Self::set_flat(&gl, prog, &world, colors.background);
+        self.map.draw_range(self.map_background_start, 6);
+        Self::set_flat(&gl, prog, &world, colors.wall);
+        self.map.draw_lines_range(0, self.map_wall_line_count);
+
+        // Robot markers (body + barrel) and health bars.
+        for r in robots {
+            let marker_mvp = robot_marker_matrix(r.direction, r.position).mul(&world);
+            Self::set_flat(&gl, prog, &marker_mvp, r.marker_color);
+            self.marker.draw_range(0, 6); // body square
+            Self::set_flat(&gl, prog, &marker_mvp, colors.barrel);
+            self.marker.draw_range(6, 6); // barrel
+
+            for seg in health_bar_segments(r.health_fraction) {
+                let seg_mvp =
+                    health_bar_segment_matrix(&seg, r.position, self.marker_dims.body_radius)
+                        .mul(&world);
+                Self::set_flat(&gl, prog, &seg_mvp, seg.color);
+                self.health_quad.draw();
+            }
+        }
+
+        // Center crosshair (identity MVP) — full-screen map only.
+        if mode == MapMode::Full2D {
+            let identity = Mat4::scaling(Vec3::ONE);
+            Self::set_flat(&gl, prog, &identity, colors.crosshair);
+            self.crosshair.draw_lines_range(0, 8);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +572,54 @@ mod tests {
         assert_eq!(*geo.wall_line_indices.last().unwrap(), 0);
         // Background quad indices reference verts 4..8.
         assert_eq!(geo.background_indices, [4, 5, 6, 5, 7, 6]);
+    }
+
+    #[test]
+    fn build_map_mesh_concatenates_walls_then_background() {
+        let mm = build_map_mesh(&one_room());
+        // 8 wall-line indices, then the 6 background-quad indices.
+        assert_eq!(mm.wall_line_count, 8);
+        assert_eq!(mm.background_start, 8);
+        assert_eq!(mm.indices.len(), 14);
+        assert_eq!(&mm.indices[8..14], &[4, 5, 6, 5, 7, 6]);
+        assert_eq!(mm.vertices.len(), 8);
+    }
+
+    #[test]
+    fn robot_marker_indices_are_two_strips_within_eight_verts() {
+        let idx = robot_marker_indices();
+        assert_eq!(idx.len(), 12);
+        assert!(idx.iter().all(|&i| i < 8));
+        // Body strip [0,6), barrel strip [6,12).
+        assert_eq!(&idx[0..6], &[0, 1, 2, 2, 1, 3]);
+        assert_eq!(&idx[6..12], &[4, 5, 6, 6, 5, 7]);
+    }
+
+    #[test]
+    fn crosshair_line_indices_are_four_segments() {
+        assert_eq!(crosshair_line_indices(), [0, 1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn robot_marker_matrix_rotates_then_translates() {
+        // Heading 0: local +X point lands at pos + (len, 0).
+        let m = robot_marker_matrix(0.0, Vec2::new(2.0, 3.0));
+        let out = m.mul_row_vec4([1.0, 0.0, 0.0, 1.0]);
+        assert!(equals(out[0], 3.0) && equals(out[1], 3.0));
+        // Heading 90°: local +X point swings toward +Y.
+        let m = robot_marker_matrix(crate::render::d3dx::D3DX_PI * 0.5, Vec2::new(2.0, 3.0));
+        let out = m.mul_row_vec4([1.0, 0.0, 0.0, 1.0]);
+        assert!((out[0] - 2.0).abs() < 1e-5 && (out[1] - 4.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn health_bar_segment_matrix_sizes_and_lifts_above_the_robot() {
+        // Full health: green spans the whole bar (width 1, offset 0).
+        let [green, _red] = health_bar_segments(1.0);
+        let m = health_bar_segment_matrix(&green, Vec2::ZERO, 0.5);
+        // Local corner (0.5, 0.5) -> scale (1, 0.1) -> +(0, 0.5+0.1) above.
+        let out = m.mul_row_vec4([0.5, 0.5, 0.0, 1.0]);
+        assert!(equals(out[0], 0.5)); // 0.5 * width(1)
+        assert!(equals(out[1], 0.5 * HEALTH_BAR_HEIGHT + 0.6)); // 0.05 + above(0.6)
     }
 }
