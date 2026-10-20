@@ -181,7 +181,8 @@ simple (one decode path, no per-format branching):
 disk (every registered texture/sound must exist) and asserts the standard
 format (16-bit mono PCM; RGBA8 PNG), so a missing or mis-encoded asset can't
 silently ship. The offline conversion itself is a throwaway step (no dev tool
-is kept in-tree); only `mazegen` remains, for authoring new mazes.
+is kept in-tree); only `mazegen` remains, for authoring new mazes
+(`cargo run --bin mazegen -- OUT.maz W H [SEED]`; it never overwrites).
 
 ## Platform notes
 

@@ -115,11 +115,11 @@ load time, not stored:
 The shipped `assets/MazeFiles/*.maz` are the **original mazes**, recovered
 byte-for-byte from `OperationPurge.msi` (Big1/2, BigBlank, BigRandom,
 Small1–15, SmallBlank, SmallRandom). To author *new* mazes, the `mazegen`
-tool (`src/bin/mazegen.rs`) emits files that reload byte-identically through
-the codec (pinned by tests):
+tool (`src/bin/mazegen.rs`) emits one bordered perfect maze per run. It
+refuses to overwrite an existing file, so it can't clobber the originals:
 
 ```sh
-cargo run --bin mazegen
+cargo run --bin mazegen -- assets/MazeFiles/Mine.maz 10 10 [SEED]
 ```
 
 ## Wildcard maze selection
