@@ -25,7 +25,7 @@ use crate::data::builtin::Robot3DDimensions;
 use crate::error::GlError;
 use crate::math::{sphere_coord, Rgba};
 use crate::render::camera::FreeFlyCamera;
-use crate::render::d3dx::{Mat4, D3DX_PI};
+use crate::math::d3dx::{Mat4, D3DX_PI};
 use crate::render::gl::{GlState, WindingDecision};
 use crate::render::mesh::{triangle_fan_to_list, Mesh, VertexLit};
 use crate::render::shaders::{self, Programs};

@@ -6,7 +6,6 @@
 pub mod building3d;
 pub mod camera;
 pub mod center3d;
-pub mod d3dx;
 pub mod gl;
 pub mod mesh;
 pub mod overlay;

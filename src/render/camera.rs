@@ -1,7 +1,7 @@
 //! Camera + free-fly debug controls + the M4 winding-gate debug state
 //! (design §3.2, §3.3, §7 M4).
 //!
-//! The view/projection path is built entirely from `render::d3dx` (the
+//! The view/projection path is built entirely from `math::d3dx` (the
 //! verbatim LH Z-up row-vector D3DX module) so no glam camera helper is
 //! ever involved: `view = LookAtLH`, `proj = PerspectiveFovLH * CLIP_FIX`
 //! (row-vector order). Every matrix uniform is uploaded as its
@@ -13,7 +13,7 @@
 
 use glam::Vec3;
 
-use crate::render::d3dx::{self, Mat4};
+use crate::math::d3dx::{self, Mat4};
 use crate::render::gl::WindingDecision;
 
 /// Field of view (Y), near, far — verbatim `cOperationPurge.cpp:3060`

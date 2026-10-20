@@ -22,7 +22,7 @@ use crate::data::builtin::Robot3DDimensions;
 use crate::error::GlError;
 use crate::maze::building::Building;
 use crate::math::Rgba;
-use crate::render::d3dx::Mat4;
+use crate::math::d3dx::Mat4;
 use crate::render::gl::{GlState, WindingDecision};
 use crate::render::mesh::{Mesh, VertexPos};
 use crate::render::shaders::{Program, Programs};
@@ -624,7 +624,7 @@ mod tests {
         let out = m.mul_row_vec4([1.0, 0.0, 0.0, 1.0]);
         assert!(equals(out[0], 3.0) && equals(out[1], 3.0));
         // Heading 90°: local +X point swings toward +Y.
-        let m = robot_marker_matrix(crate::render::d3dx::D3DX_PI * 0.5, Vec2::new(2.0, 3.0));
+        let m = robot_marker_matrix(crate::math::d3dx::D3DX_PI * 0.5, Vec2::new(2.0, 3.0));
         let out = m.mul_row_vec4([1.0, 0.0, 0.0, 1.0]);
         assert!((out[0] - 2.0).abs() < 1e-5 && (out[1] - 4.0).abs() < 1e-5);
     }

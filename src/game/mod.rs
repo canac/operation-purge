@@ -26,7 +26,7 @@ use crate::input::Input;
 use crate::math::intersect::MovingRect;
 use crate::path::RoomGraph;
 use crate::render::camera::FreeFlyCamera;
-use crate::render::d3dx::D3DX_PI;
+use crate::math::d3dx::D3DX_PI;
 use crate::render::overlay::{MAP_VIEWPORT_OFFSET, MAP_VIEWPORT_SIZE};
 use crate::sim::robot::{Throttle, ROBOT_SIZE_XY, ROBOT_SIZE_Z};
 use crate::sim::world::{RobotInput, Status, World};

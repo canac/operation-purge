@@ -2,7 +2,7 @@
 //! (`cSprite3D.cpp:13-349`, source-map §3.2).
 //!
 //! PARITY: the billboard basis reads the view matrix's **columns** 0/1/2
-//! (`cSprite3D.cpp:80-85`, via [`crate::render::d3dx::billboard_basis`]);
+//! (`cSprite3D.cpp:80-85`, via [`crate::math::d3dx::billboard_basis`]);
 //! the 6 orientation matrices are copied verbatim (`cSprite3D.cpp:128-159`);
 //! sprite quads use the index pattern `(0,2,1)(1,2,3)`
 //! (`cSprite3D.cpp:55-60`); each sprite's 4 vertices are pre-transformed
@@ -24,7 +24,7 @@ use glow::HasContext;
 use crate::error::GlError;
 use crate::math::Rgba;
 use crate::render::camera::FreeFlyCamera;
-use crate::render::d3dx::{self, Mat4};
+use crate::math::d3dx::{self, Mat4};
 use crate::render::gl::GlState;
 use crate::render::mesh::{VertexLayout, VertexSprite};
 use crate::render::shaders::Programs;

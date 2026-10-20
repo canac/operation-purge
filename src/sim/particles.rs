@@ -20,14 +20,14 @@
 //!   pre-aging (`pNewParticle->Move(dt*(1-factor))`) keep trails gap-free.
 //! - Emitter shortest-arc quaternion ported verbatim, including degenerate
 //!   cases (NaN on zero velocity, `(0,0,1,0)` fallback on anti-parallel) —
-//!   NOT glam's `from_rotation_arc` (see `render::d3dx`, source-map §7).
+//!   NOT glam's `from_rotation_arc` (see `math::d3dx`, source-map §7).
 //! - Static effects prune expired emitters; **dynamic effects never do**
 //!   (owner must delete) — do not "fix" this into always-pruning.
 
 use crate::data::{GameData, ParticleType};
 use crate::ids::{EffectDefId, EmitterTypeId, ParticleTypeId};
 use crate::math::{sphere_coord, Rgba};
-use crate::render::d3dx;
+use crate::math::d3dx;
 use crate::rng::GameRng;
 use glam::Vec3;
 

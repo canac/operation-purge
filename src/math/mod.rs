@@ -2,9 +2,10 @@
 //! plus the `Rgba` color type used by `data/` and `render/`.
 //!
 //! Full bodies (SphereCoord, AcceleratePoint) land at M2 alongside
-//! `render::d3dx`; this module fixes their signatures now because `sim/`
+//! `math::d3dx`; this module fixes their signatures now because `sim/`
 //! and `render/` stubs already need to name them.
 
+pub mod d3dx;
 pub mod intersect;
 
 use glam::Vec3;

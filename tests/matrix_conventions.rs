@@ -1,4 +1,4 @@
-//! M2 gate: `render::d3dx` matrix-convention pins (design §3.2, §1.5.3,
+//! M2 gate: `math::d3dx` matrix-convention pins (design §3.2, §1.5.3,
 //! §6, §7 M2 "Accept": *"all §6 math vector tables pass, incl.
 //! matrix_conventions.rs element-exact checks"*).
 //!
@@ -11,7 +11,7 @@
 //! independent cross-check of the public API surface.
 
 use operation_purge::math::equals;
-use operation_purge::render::d3dx::{billboard_basis, clip_fix, transform_point_homogeneous, Mat4, D3DX_PI};
+use operation_purge::math::d3dx::{billboard_basis, clip_fix, transform_point_homogeneous, Mat4, D3DX_PI};
 use glam::Vec3;
 
 #[test]

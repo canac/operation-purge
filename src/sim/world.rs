@@ -611,7 +611,7 @@ impl World {
                         let size = self.game_data.projectile_types
                             [proj.projectile_type.get() as usize]
                             .hole_size;
-                        let rotation = self.rng.frand() * crate::render::d3dx::D3DX_PI * 2.0;
+                        let rotation = self.rng.frand() * crate::math::d3dx::D3DX_PI * 2.0;
                         self.holes.push(Hole {
                             position,
                             normal,

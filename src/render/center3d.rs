@@ -19,7 +19,7 @@ use glow::HasContext;
 use crate::error::GlError;
 use crate::math::Rgba;
 use crate::render::camera::FreeFlyCamera;
-use crate::render::d3dx::Mat4;
+use crate::math::d3dx::Mat4;
 use crate::render::gl::{GlState, WindingDecision};
 use crate::render::mesh::{Mesh, VertexLit};
 use crate::render::shaders::{self, Programs};
@@ -134,7 +134,7 @@ impl CenterRenderer {
 mod tests {
     use super::*;
     use crate::math::equals;
-    use crate::render::d3dx::D3DX_PI;
+    use crate::math::d3dx::D3DX_PI;
 
     #[test]
     fn eight_vertices_twelve_indices() {
