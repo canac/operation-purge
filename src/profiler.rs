@@ -1,29 +1,25 @@
-//! Hierarchical scope profiler, replacing `Profile.h`/`cProfileManager`
-//!.
+//! Hierarchical scope profiler, replacing `Profile.h`/`cProfileManager`.
 //!
-//! Shipped, user-visible feature (P/[/] keybindings toggle
-//! running/visible/interaction; on-screen tree pane; 250 ms refresh; exit
-//! dump to `Profile output.txt`) — not dev-only tooling. The original
+//! Shipped, user-visible feature (P toggles running, `[` toggles the
+//! on-screen pane; exit dump to `Profile output.txt`). The original
 //! measured raw `rdtsc` ticks over `QueryPerformanceFrequency` (a unit
-//! mismatch that "worked" only because the overlay shows ratios); the
-//! port uses `std::time::Instant`, a correct monotonic clock, everywhere
-//! rdtsc appeared.
+//! mismatch that "worked" only because the overlay shows ratios); the port
+//! uses `std::time::Instant` everywhere rdtsc appeared.
 //!
-//! Structure mirrors `Common/Profile.{h,cpp}` verbatim: a tree of named
-//! nodes with a per-node recursion counter (`Call`/`Return`), a "current
-//! node" cursor the `PROFILE(name)` scope walks, and a `cProfileIterator`
-//! for read-out. The C++ used raw parent/child/sibling pointers; here the
-//! tree is an index arena (`Vec<ProfileNode>`), which is the borrow-checker-
-//! clean equivalent — node identity by `&'static str` value replaces the
-//! original's static-string *pointer* comparison, a
-//! correct substitute for the compiled-in scope names.
+//! Structure mirrors `Common/Profile.{h,cpp}`: a tree of named nodes with a
+//! per-node recursion counter (`Call`/`Return`) and a "current node" cursor
+//! the `PROFILE(name)` scope walks. The tree is an index arena; node
+//! identity by `&'static str` value replaces the original's static-string
+//! *pointer* comparison.
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
-/// One node in the profile tree (`cProfileNode`). Children/parent are arena
-/// indices into the owning [`ProfileManager`].
+/// Arena index of the root node; its children are the top-level scopes.
+pub const ROOT: usize = 0;
+
+/// One node in the profile tree (`cProfileNode`).
 pub struct ProfileNode {
     pub name: &'static str,
     pub total_time: Duration,
@@ -51,17 +47,16 @@ impl ProfileNode {
     }
 }
 
-/// Global profiler state; the app owns one instance (replacing the
-/// original's `g_ProfileManager` singleton). Node index 0 is
-/// always the root.
+/// The profile tree plus its session clock (the original's
+/// `g_ProfileManager`).
 pub struct ProfileManager {
-    pub enabled: bool,
+    enabled: bool,
     nodes: Vec<ProfileNode>,
     current: usize,
-    session_start: Instant,
-    /// Test-only override for `time_elapsed()` so dump percentages are
-    /// deterministic without a real wall-clock wait.
-    elapsed_override: Option<Duration>,
+    /// Enabled time from earlier on/off stretches; the session clock only
+    /// runs while enabled so dump percentages compare like with like.
+    enabled_before: Duration,
+    enabled_since: Option<Instant>,
 }
 
 impl ProfileManager {
@@ -69,32 +64,39 @@ impl ProfileManager {
         Self {
             enabled,
             nodes: vec![ProfileNode::new("Root", None)],
-            current: 0,
-            session_start: Instant::now(),
-            elapsed_override: None,
+            current: ROOT,
+            enabled_before: Duration::ZERO,
+            enabled_since: enabled.then(Instant::now),
         }
     }
 
-    /// `cProfileManager::SetProfilingEnabled` (toggled by the profiler-running
-    /// keybinding).
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// `cProfileManager::SetProfilingEnabled` (the profiler-running key).
     pub fn set_enabled(&mut self, enabled: bool) {
+        self.set_enabled_at(enabled, Instant::now());
+    }
+
+    fn set_enabled_at(&mut self, enabled: bool, now: Instant) {
+        if enabled == self.enabled {
+            return;
+        }
         self.enabled = enabled;
+        if enabled {
+            self.enabled_since = Some(now);
+        } else if let Some(since) = self.enabled_since.take() {
+            self.enabled_before += now.saturating_duration_since(since);
+        }
     }
 
-    /// `cProfileManager::Reset` — clears the whole tree, keeping only the
-    /// root, and restarts the session clock.
-    pub fn reset(&mut self) {
-        self.nodes.truncate(1);
-        self.nodes[0] = ProfileNode::new("Root", None);
-        self.current = 0;
-        self.session_start = Instant::now();
-        self.elapsed_override = None;
-    }
-
-    /// Total profiling-session wall time (`GetTimeElapsed`).
-    pub fn time_elapsed(&self) -> Duration {
-        self.elapsed_override
-            .unwrap_or_else(|| self.session_start.elapsed())
+    /// Total time spent enabled up to `now` (`GetTimeElapsed`).
+    fn time_elapsed_at(&self, now: Instant) -> Duration {
+        self.enabled_before
+            + self
+                .enabled_since
+                .map_or(Duration::ZERO, |since| now.saturating_duration_since(since))
     }
 
     fn find_or_create_child(&mut self, parent: usize, name: &'static str) -> usize {
@@ -151,22 +153,10 @@ impl ProfileManager {
         }
     }
 
-    /// Root node (read-only) — the iterator's entry point.
-    pub fn root(&self) -> &ProfileNode {
-        &self.nodes[0]
-    }
-
-    /// An iterator positioned over the root's children (`cProfileIterator`).
-    pub fn iter(&self) -> ProfileIterator<'_> {
-        ProfileIterator {
-            mgr: self,
-            parent: 0,
-            child_pos: 0,
-        }
-    }
-
-    fn children_of(&self, parent: usize) -> &[usize] {
-        &self.nodes[parent].children
+    /// The child nodes of arena node `node`, as `(index, node)` pairs, in
+    /// first-entered order. Pass [`ROOT`] for the top-level scopes.
+    pub fn children(&self, node: usize) -> impl Iterator<Item = (usize, &ProfileNode)> {
+        self.nodes[node].children.iter().map(|&i| (i, &self.nodes[i]))
     }
 
     /// Formatted, fixed-column tree dump — the `Profile output.txt` body
@@ -176,14 +166,18 @@ impl ProfileManager {
     /// "Unlogged" row under any node that has children). Times are seconds
     /// from `Instant` rather than the original's `ticks × 0.001`.
     pub fn dump(&self) -> String {
+        self.dump_at(Instant::now())
+    }
+
+    fn dump_at(&self, now: Instant) -> String {
         let mut out = String::new();
         let _ = writeln!(
             out,
             "{:>10}{:<40}{:<8}{:<12}{:<15}{:<12}{:<20}",
             "", "Name", "Calls", "Time (s)", "Time per call", "Percent", "Parent percent"
         );
-        let elapsed = self.time_elapsed().as_secs_f64().max(f64::MIN_POSITIVE);
-        self.dump_children(&mut out, 0, elapsed, self.time_elapsed().as_secs_f64(), 1);
+        let elapsed = self.time_elapsed_at(now).as_secs_f64();
+        self.dump_children(&mut out, ROOT, elapsed.max(f64::MIN_POSITIVE), elapsed, 1);
         out
     }
 
@@ -195,7 +189,7 @@ impl ProfileManager {
         parent_time: f64,
         level: usize,
     ) {
-        let children = self.children_of(parent);
+        let children = &self.nodes[parent].children;
         if children.is_empty() {
             return;
         }
@@ -246,71 +240,10 @@ impl Default for ProfileManager {
     }
 }
 
-/// Read-only navigator over a [`ProfileManager`] tree (`cProfileIterator`):
-/// walks the children of a "current parent", can descend into a child, and
-/// ascend back to the grandparent.
-pub struct ProfileIterator<'a> {
-    mgr: &'a ProfileManager,
-    parent: usize,
-    child_pos: usize,
-}
-
-impl<'a> ProfileIterator<'a> {
-    pub fn first(&mut self) {
-        self.child_pos = 0;
-    }
-
-    pub fn next(&mut self) {
-        self.child_pos += 1;
-    }
-
-    pub fn is_done(&self) -> bool {
-        self.child_pos >= self.mgr.children_of(self.parent).len()
-    }
-
-    fn current_index(&self) -> Option<usize> {
-        self.mgr.children_of(self.parent).get(self.child_pos).copied()
-    }
-
-    pub fn current_name(&self) -> Option<&'static str> {
-        self.current_index().map(|i| self.mgr.nodes[i].name)
-    }
-
-    pub fn current_total_calls(&self) -> Option<u32> {
-        self.current_index().map(|i| self.mgr.nodes[i].total_calls)
-    }
-
-    pub fn current_total_time(&self) -> Option<Duration> {
-        self.current_index().map(|i| self.mgr.nodes[i].total_time)
-    }
-
-    /// Make the current child the new parent. Returns `true` if it has any
-    /// children (`cProfileIterator::EnterChild`).
-    pub fn enter_child(&mut self) -> bool {
-        if let Some(i) = self.current_index() {
-            self.parent = i;
-            self.child_pos = 0;
-            !self.mgr.children_of(i).is_empty()
-        } else {
-            false
-        }
-    }
-
-    /// Make the current parent's parent the new parent
-    /// (`cProfileIterator::EnterParent`).
-    pub fn enter_parent(&mut self) {
-        if let Some(gp) = self.mgr.nodes[self.parent].parent {
-            self.parent = gp;
-            self.child_pos = 0;
-        }
-    }
-}
-
 thread_local! {
-    /// Process-wide manager the `profile_scope!` macro records into. The game
-    /// loop is single-threaded, so a `thread_local` is the faithful analog of
-    /// the original `g_ProfileManager` global. Enabled state
-    /// starts `false` — the "profiler running" keybinding turns it on.
+    /// The manager `profile_scope!` records into. The game loop is
+    /// single-threaded, so a `thread_local` stands in for the original's
+    /// `g_ProfileManager` global. Starts disabled until the P key.
     static PROFILER: RefCell<ProfileManager> = RefCell::new(ProfileManager::new(false));
 }
 
@@ -319,24 +252,8 @@ pub fn with_profiler<R>(f: impl FnOnce(&mut ProfileManager) -> R) -> R {
     PROFILER.with(|p| f(&mut p.borrow_mut()))
 }
 
-/// Enable/disable the global profiler (the profiler-running keybinding).
-pub fn set_enabled(enabled: bool) {
-    with_profiler(|p| p.set_enabled(enabled));
-}
-
-/// Clear the global profile tree and restart its session clock.
-pub fn reset() {
-    with_profiler(|p| p.reset());
-}
-
-/// Snapshot of the global profile tree in `Profile output.txt` format.
-pub fn dump() -> String {
-    with_profiler(|p| p.dump())
-}
-
 /// The exit-dump destination (`Profile output.txt`). The original wrote it
-/// to the install dir; the port moves it to `data_local_dir` alongside
-/// `Logfile.txt` (broken-under-UAC deviation).
+/// to the install dir, which is read-only under UAC.
 pub fn exit_dump_path() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
@@ -344,25 +261,24 @@ pub fn exit_dump_path() -> std::path::PathBuf {
         .join("Profile output.txt")
 }
 
-/// Write the global profile tree to `Profile output.txt` on exit
-/// (PARITY: `cMainWindow` dumped the profile on shutdown).
-/// Only writes when the profiler has actually recorded something (an empty
-/// run leaves no file, mirroring the lazy `Logfile.txt`).
+/// Write the global profile tree to `Profile output.txt` on exit (PARITY:
+/// `cMainWindow` dumped the profile on shutdown). Writes nothing if the
+/// profiler never recorded a scope.
 pub fn write_exit_dump() -> std::io::Result<()> {
-    let has_data = with_profiler(|p| !p.root().children.is_empty());
-    if !has_data {
+    let Some(text) = with_profiler(|p| p.children(ROOT).next().is_some().then(|| p.dump()))
+    else {
         return Ok(());
-    }
+    };
     let path = exit_dump_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, dump())
+    std::fs::write(&path, text)
 }
 
 /// RAII scope guard — the Rust analog of the `PROFILE("name")` macro used
-/// at ~25 sites in `cOperationPurge.cpp`. Enters a scope in
-/// the global [`PROFILER`] on construction and closes it on drop.
+/// at ~25 sites in `cOperationPurge.cpp`. Enters a scope in the global
+/// [`PROFILER`] on construction and closes it on drop.
 pub struct ProfileScope {
     _priv: (),
 }
@@ -398,51 +314,43 @@ mod tests {
         base + Duration::from_millis(ms)
     }
 
+    fn summary(m: &ProfileManager, node: usize) -> Vec<(&'static str, u32, Duration)> {
+        m.children(node)
+            .map(|(_, n)| (n.name, n.total_calls, n.total_time))
+            .collect()
+    }
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
     #[test]
     fn nested_scopes_build_a_tree_with_injected_durations() {
         let base = Instant::now();
         let mut m = ProfileManager::new(true);
         m.enter("frame", at(base, 0));
         m.enter("sim", at(base, 1));
-        m.leave(at(base, 6)); // sim = 5ms
+        m.leave(at(base, 6));
         m.enter("render", at(base, 6));
-        m.leave(at(base, 16)); // render = 10ms
-        m.leave(at(base, 20)); // frame = 20ms
+        m.leave(at(base, 16));
+        m.leave(at(base, 20));
 
-        let mut it = m.iter();
-        it.first();
-        assert_eq!(it.current_name(), Some("frame"));
-        assert_eq!(it.current_total_calls(), Some(1));
-        assert_eq!(it.current_total_time(), Some(Duration::from_millis(20)));
-
-        assert!(it.enter_child());
-        it.first();
-        assert_eq!(it.current_name(), Some("sim"));
-        assert_eq!(it.current_total_time(), Some(Duration::from_millis(5)));
-        it.next();
-        assert_eq!(it.current_name(), Some("render"));
-        assert_eq!(it.current_total_time(), Some(Duration::from_millis(10)));
-        it.next();
-        assert!(it.is_done());
+        assert_eq!(summary(&m, ROOT), [("frame", 1, ms(20))]);
+        let (frame, _) = m.children(ROOT).next().unwrap();
+        assert_eq!(summary(&m, frame), [("sim", 1, ms(5)), ("render", 1, ms(10))]);
     }
 
     #[test]
     fn recursive_reentry_times_once_and_counts_calls() {
         let base = Instant::now();
         let mut m = ProfileManager::new(true);
-        // Enter "recurse" three times without leaving (recursion), then
-        // unwind. PARITY: only the outermost close accumulates time.
         m.enter("recurse", at(base, 0));
         m.enter("recurse", at(base, 2));
         m.enter("recurse", at(base, 4));
         m.leave(at(base, 6));
         m.leave(at(base, 8));
-        m.leave(at(base, 10)); // outer close: total = 10ms
-        let mut it = m.iter();
-        it.first();
-        assert_eq!(it.current_name(), Some("recurse"));
-        assert_eq!(it.current_total_calls(), Some(3));
-        assert_eq!(it.current_total_time(), Some(Duration::from_millis(10)));
+        m.leave(at(base, 10));
+        assert_eq!(summary(&m, ROOT), [("recurse", 3, ms(10))]);
     }
 
     #[test]
@@ -453,10 +361,7 @@ mod tests {
             m.enter("tick", at(base, i * 10));
             m.leave(at(base, i * 10 + 4));
         }
-        let mut it = m.iter();
-        it.first();
-        assert_eq!(it.current_total_calls(), Some(3));
-        assert_eq!(it.current_total_time(), Some(Duration::from_millis(12)));
+        assert_eq!(summary(&m, ROOT), [("tick", 3, ms(12))]);
     }
 
     #[test]
@@ -465,45 +370,41 @@ mod tests {
         let mut m = ProfileManager::new(false);
         m.enter("frame", at(base, 0));
         m.leave(at(base, 10));
-        assert!(m.iter().current_name().is_none());
+        assert!(m.children(ROOT).next().is_none());
+    }
+
+    #[test]
+    fn session_clock_only_counts_enabled_time() {
+        let base = Instant::now();
+        let mut m = ProfileManager::new(false);
+        m.set_enabled_at(true, at(base, 100));
+        m.set_enabled_at(false, at(base, 130));
+        m.set_enabled_at(true, at(base, 500));
+        assert_eq!(m.time_elapsed_at(at(base, 510)), ms(40));
     }
 
     #[test]
     fn dump_has_header_names_and_unlogged_row() {
         let base = Instant::now();
-        let mut m = ProfileManager::new(true);
+        let mut m = ProfileManager::new(false);
+        m.set_enabled_at(true, base);
         m.enter("frame", at(base, 0));
         m.enter("sim", at(base, 1));
         m.leave(at(base, 6));
         m.leave(at(base, 20));
-        m.elapsed_override = Some(Duration::from_millis(40));
 
-        let dump = m.dump();
-        assert!(dump.contains("Name"));
+        let dump = m.dump_at(at(base, 40));
         assert!(dump.contains("Parent percent"));
         assert!(dump.contains("frame"));
         assert!(dump.contains("sim"));
-        // "frame" has a child ("sim") ⇒ an Unlogged row is emitted for it.
         assert!(dump.contains("Unlogged"));
-        // frame = 20ms of 40ms elapsed ⇒ 50%.
+        // frame = 20ms of 40ms enabled.
         assert!(dump.contains("50.00000%"));
     }
 
     #[test]
-    fn reset_clears_the_tree() {
-        let base = Instant::now();
-        let mut m = ProfileManager::new(true);
-        m.enter("a", at(base, 0));
-        m.leave(at(base, 1));
-        m.reset();
-        assert!(m.iter().current_name().is_none());
-        assert_eq!(m.root().name, "Root");
-    }
-
-    #[test]
     fn global_scope_macro_records_into_the_thread_local() {
-        reset();
-        set_enabled(true);
+        with_profiler(|p| p.set_enabled(true));
         {
             profile_scope!("outer");
             {
@@ -511,16 +412,11 @@ mod tests {
             }
         }
         let names = with_profiler(|p| {
-            let mut it = p.iter();
-            it.first();
-            let outer = it.current_name();
-            it.enter_child();
-            it.first();
-            (outer, it.current_name())
+            let (outer, node) = p.children(ROOT).next().unwrap();
+            let names = (node.name, p.children(outer).next().map(|(_, n)| n.name));
+            p.set_enabled(false);
+            names
         });
-        assert_eq!(names.0, Some("outer"));
-        assert_eq!(names.1, Some("inner"));
-        // Leave the global disabled so unrelated tests aren't affected.
-        set_enabled(false);
+        assert_eq!(names, ("outer", Some("inner")));
     }
 }

@@ -82,7 +82,7 @@ build bound against (design §5, help-doc §1):
 | Global | Restart same game (confirm) | `F4` |
 | Global | Toggle minimap | `F1` |
 | Global | Info / HUD | `F2` |
-| Global | Profiler: run / show tree / interact | `P` / `[` / `]` |
+| Global | Profiler: record / show tree | `P` / `[` |
 | 2D map | Select friendly robot under cursor | Left mouse |
 | 2D map | Place observer point under cursor | `Ctrl`+Left mouse |
 | 2D map | Possess the selection → enter 3D | `F` (`SetObserver`) |

@@ -60,7 +60,7 @@ screen and all modals freeze the game.
 | observer | fly (fwd/back/strafe/up/down) at 3 speeds | `MoveObserver*` / `MoveObserverSpeed1/2/3` |
 | observer | **cheat fire** (empty-password games only, 0.03 s cooldown) | `FireProjectiles` |
 | modal | Yes / No / Cancel | `Y` / `N` / `C` |
-| profiler | running / visible / interaction | `ToggleProfiler{Running,Visible,Interaction}` (`P`/`[`/`]`) |
+| profiler | record / show the pane | `ToggleProfiler{Running,Visible}` (`P`/`[`) |
 
 ### Visual / feel gates to sign off (M8)
 
@@ -101,8 +101,7 @@ screen and all modals freeze the game.
    possess it → fly with the `MoveObserver*` keys at speeds 1/2/3; pitch
    clamps at ±π/2; the camera cannot leave the building (0.0001 margin).
 7. **Profiler**: `P` toggles profiling on, `[` shows the tree pane on the
-   right third (game viewport shrinks to ⅔ conceptually), `]` toggles
-   interaction; on **exit** `Profile output.txt` is written to the OS
+   right third (game viewport shrinks to ⅔ conceptually); on **exit** `Profile output.txt` is written to the OS
    data-local dir (`dirs::data_local_dir()/operation-purge/`).
 
 ### Still pending / deferred

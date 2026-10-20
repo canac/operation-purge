@@ -111,10 +111,8 @@ pub struct AppRunner {
     /// Shared RNG (seeded from config/time) used for the New Game random maze
     /// pick (`rand () % vszMazeFiles.size ()`, design §4.4).
     rng: GameRng,
-    /// P/[/] profiler pane toggles (design §5.3): running (thread-local),
-    /// visible (draws the pane), interaction (keyboard tree nav).
+    /// `[` toggles the profiler pane (P toggles recording, thread-local).
     profiler_visible: bool,
-    profiler_interaction: bool,
 
     /// Last `CursorMoved` position, physical px.
     cursor: Option<(f64, f64)>,
@@ -179,7 +177,6 @@ impl AppRunner {
             new_game: None,
             rng: GameRng::from_seed(seed),
             profiler_visible: false,
-            profiler_interaction: false,
             cursor: None,
             e2e: opts.e2e,
             fixed_dt: opts.fixed_dt,
@@ -948,16 +945,13 @@ impl AppRunner {
                 // Profiler running toggle (P): thread-local enable.
                 if game.command_just_pressed(Command::ToggleProfilerRunning, &self.input) {
                     let now_on = crate::profiler::with_profiler(|p| {
-                        p.set_enabled(!p.enabled);
-                        p.enabled
+                        p.set_enabled(!p.enabled());
+                        p.enabled()
                     });
                     eprintln!("profiler running: {now_on}");
                 }
                 if game.command_just_pressed(Command::ToggleProfilerVisible, &self.input) {
                     self.profiler_visible = !self.profiler_visible;
-                }
-                if game.command_just_pressed(Command::ToggleProfilerInteraction, &self.input) {
-                    self.profiler_interaction = !self.profiler_interaction;
                 }
 
                 // PARITY (design §5.4): stop all sounds the instant a modal
@@ -1480,17 +1474,9 @@ fn game_live_listener(game: &Game) -> glam::Vec3 {
 fn profiler_pane_lines() -> String {
     crate::profiler::with_profiler(|p| {
         let mut out = String::from("PROFILER\n");
-        let mut it = p.iter();
-        it.first();
-        while !it.is_done() {
-            if let (Some(name), Some(t), Some(calls)) = (
-                it.current_name(),
-                it.current_total_time(),
-                it.current_total_calls(),
-            ) {
-                out.push_str(&format!("{name}: {:.3}ms x{calls}\n", t.as_secs_f64() * 1000.0));
-            }
-            it.next();
+        for (_, n) in p.children(crate::profiler::ROOT) {
+            let ms = n.total_time.as_secs_f64() * 1000.0;
+            out.push_str(&format!("{}: {ms:.3}ms x{}\n", n.name, n.total_calls));
         }
         out
     })
