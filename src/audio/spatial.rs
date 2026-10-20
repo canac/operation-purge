@@ -1,6 +1,6 @@
 //! Manual DS3D spatial model: gain/pan math in the sim's LH Z-up frame,
 //! replacing `IDirectSound3DListener`/`IDirectSound3DBuffer`
-//! (design §5.4). Ported at M10 from the DS3D setup in
+//! (the DS3D setup in
 //! `cOperationPurge::Play3DSound` (`cOperationPurge.cpp:1842-1857`,
 //! `flMinDistance = 10`, `flMaxDistance = 100`, `DSBCAPS_MUTE3DATMAXDISTANCE`)
 //! and the listener frame in `ExecuteCommands`
@@ -10,7 +10,7 @@
 //! PARITY: unity gain within min distance 10; `10/d` inverse-distance
 //! rolloff from 10..100; **hard mute beyond 100**; no doppler (the
 //! original never set source velocities); listener updated every 10th
-//! frame (design §7 constants table).
+//! frame.
 
 use glam::{Vec2, Vec3};
 
@@ -22,12 +22,12 @@ pub const MAX_DISTANCE: f32 = 100.0;
 pub const LISTENER_UPDATE_INTERVAL_FRAMES: u32 = 10;
 
 /// Inverse-distance rolloff with unity gain inside `MIN_DISTANCE` and hard
-/// mute beyond `MAX_DISTANCE` (design §5.4).
+/// mute beyond `MAX_DISTANCE`.
 ///
 /// PARITY: reproduces the DS3D inverse-distance model with `flMinDistance
 /// = 10`, `flMaxDistance = 100` and the `DSBCAPS_MUTE3DATMAXDISTANCE` flag
-/// (`cOperationPurge.cpp:1856-1857`, `Sound.cpp` create flags). The design
-/// pins the boundaries verbatim: unity for `d <= 10`, `10/d` across the
+/// (`cOperationPurge.cpp:1856-1857`, `Sound.cpp` create flags). Boundaries:
+/// unity for `d <= 10`, `10/d` across the
 /// `10..=100` rolloff band (so `d == 100` yields `0.1`, still audible),
 /// and a hard `0.0` mute for `d > 100`.
 pub fn distance_gain(distance: f32) -> f32 {
@@ -69,7 +69,7 @@ pub fn azimuth_pan(listener_forward: Vec3, to_source: Vec3) -> f32 {
 }
 
 /// The DS3D listener pose in the sim's LH Z-up frame (position + forward),
-/// refreshed every `LISTENER_UPDATE_INTERVAL_FRAMES` frames (design §5.4).
+/// refreshed every `LISTENER_UPDATE_INTERVAL_FRAMES` frames.
 ///
 /// PARITY: `ListenerData` in `cOperationPurge::ExecuteCommands`
 /// (`cOperationPurge.cpp:1276-1291`). Position is the observer/active-robot
@@ -101,12 +101,6 @@ impl AudioListener {
             position: Vec3::new(position_2d.x, position_2d.y, 0.0),
             forward: Vec3::new(rotation.cos(), rotation.sin(), 0.0),
         }
-    }
-
-    /// Distance from the listener to a 3D sound origin (`Distance3D`,
-    /// the sqrt of the `Distance3DSqr` the steal rule compares).
-    pub fn distance_to(&self, origin: Vec3) -> f32 {
-        (origin - self.position).length()
     }
 
     /// `(gain, pan)` for a mono 3D source emitted at `origin`.

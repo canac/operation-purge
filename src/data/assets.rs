@@ -1,19 +1,17 @@
-//! Asset directory layout (design §4.6), replacing the original's
-//! `SetCurrentDirectory(FilesDir)` + CWD-relative opens (libs-map §4).
-//!
-//! Every path is an explicit `PathBuf` rooted at `assets_dir` — the port
-//! never chdirs (design §4.1, §5.1 "Config storage").
+//! Asset directory layout, replacing the original's
+//! `SetCurrentDirectory(FilesDir)` + CWD-relative opens. Every path is an
+//! explicit `PathBuf` rooted at `assets_dir`; the port never chdirs.
 //!
 //! [`names`] is the **compiled-in asset registry**: the game ships a fixed
 //! set of textures and sounds (recovered from `OperationPurge.msi`), so their
-//! filenames are baked in here rather than read from `GameData.toml` (user
-//! decision — same rationale as [`super::builtin`]). Everything is stored in
+//! filenames are baked in here rather than read from `GameData.toml` (same
+//! rationale as [`super::builtin`]). Everything is stored in
 //! one standard format: textures are PNG RGBA8, sounds are 16-bit signed PCM
 //! mono WAV (converted offline from the originals; see the README).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-/// The game's fixed asset filenames (design §4.6). Baked in — the running
+/// The game's fixed asset filenames. Baked in — the running
 /// game never reads these names from data. The originals assigned them in
 /// the shipped `GameData.xml`; this port hardcodes that assignment.
 pub mod names {
@@ -57,8 +55,8 @@ pub mod names {
         }
     }
 
-    /// Every sound the game plays — the app preloads exactly this set once
-    /// at startup (alarms first, so their `ClipId`s are 0 and 1).
+    /// Every sound the game plays; the app preloads exactly this set once
+    /// at startup.
     pub const ALL_SOUNDS: &[&str] = &[
         ENEMY_VISIBLE_SOUND,
         TARGETED_SOUND,
@@ -80,26 +78,20 @@ pub mod names {
     ];
 }
 
-/// Resolved asset subdirectories, joined once at startup.
+/// The asset tree layout under `root` (`cGameData::GetSoundsPath()` =
+/// `"Sounds"`, `GetTexturesPath()` = `"Textures"`).
 pub struct AssetDirs {
     pub root: PathBuf,
     pub sounds: PathBuf,
     pub textures: PathBuf,
-    pub maze_files: PathBuf,
-    pub fonts: PathBuf,
 }
 
 impl AssetDirs {
-    /// `Textures/`, `Sounds/`, `MazeFiles/`, `Fonts/` under `root`
-    /// (`cGameData::GetSoundsPath()` = `"Sounds"`,
-    /// `GetTexturesPath()` = `"Textures"`, libs-map §2.1).
     pub fn new(root: impl Into<PathBuf>) -> Self {
         let root = root.into();
         Self {
             sounds: root.join("Sounds"),
             textures: root.join("Textures"),
-            maze_files: root.join("MazeFiles"),
-            fonts: root.join("Fonts"),
             root,
         }
     }
@@ -107,30 +99,18 @@ impl AssetDirs {
     pub fn game_data_toml(&self) -> PathBuf {
         self.root.join("GameData.toml")
     }
-
-    pub fn texture(&self, filename: impl AsRef<Path>) -> PathBuf {
-        self.textures.join(filename)
-    }
-
-    pub fn sound(&self, filename: impl AsRef<Path>) -> PathBuf {
-        self.sounds.join(filename)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn subdirs_join_the_conventional_names() {
         let dirs = AssetDirs::new("/tmp/assets");
         assert_eq!(dirs.sounds, Path::new("/tmp/assets/Sounds"));
         assert_eq!(dirs.textures, Path::new("/tmp/assets/Textures"));
-        assert_eq!(dirs.maze_files, Path::new("/tmp/assets/MazeFiles"));
-        assert_eq!(dirs.fonts, Path::new("/tmp/assets/Fonts"));
-        assert_eq!(
-            dirs.game_data_toml(),
-            Path::new("/tmp/assets/GameData.toml")
-        );
+        assert_eq!(dirs.game_data_toml(), Path::new("/tmp/assets/GameData.toml"));
     }
 }

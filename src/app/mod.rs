@@ -140,8 +140,8 @@ pub struct RunOptions {
 impl AppRunner {
     pub fn new(config: Config, opts: RunOptions) -> Self {
         // Best-effort data load; the shell still runs (echoing "no data") if
-        // GameData.toml is missing/broken (GUARD: no null-deref, design §4.1).
-        let path = std::path::Path::new(&config.assets_dir).join("GameData.toml");
+        // GameData.toml is missing/broken (GUARD: no null-deref).
+        let path = crate::data::assets::AssetDirs::new(&config.assets_dir).game_data_toml();
         let game_data = match crate::data::gamedata::load(&path) {
             Ok(data) => Some(data),
             Err(e) => {
@@ -1366,13 +1366,7 @@ pub fn run(config: Config, opts: RunOptions) -> Result<(), GameError> {
 }
 
 // ============================ audio (runtime) ============================
-//
-// The audio manager owns `SpatialSounds<KiraBackend>` (design §5.4). It is
-// gated `#[cfg(not(test))]` because `KiraBackend` opens a device and is not
-// compiled under `cfg(test)`; a stub with the same surface keeps `AppRunner`
-// compiling in the (window-free) test build.
 
-#[cfg(not(test))]
 struct GameAudio {
     sounds: crate::audio::SpatialSounds<crate::audio::KiraBackend>,
     listener_frame: u32,
@@ -1381,44 +1375,38 @@ struct GameAudio {
     played: u64,
 }
 
-#[cfg(not(test))]
 impl GameAudio {
     /// Open the device, preload every alarm + per-event clip, and register a
     /// voice pool (`nSimultaneousInstances`) per clip. Returns `None` (muted)
     /// on any device/decoding failure so the game still runs.
     fn new(assets: &std::path::Path, data: &GameData) -> Option<Self> {
-        let mut backend = match crate::audio::KiraBackend::new() {
+        use crate::data::assets::names;
+        let voices = data.sounds.simultaneous_instances.max(1) as usize;
+        let capacity = crate::audio::sound_capacity(names::ALL_SOUNDS.len(), voices);
+        let backend = match crate::audio::KiraBackend::new(capacity) {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("audio disabled (no device): {e}");
+                crate::log_error!("audio disabled (no device): {e}");
                 return None;
             }
         };
-        let voices = data.sounds.simultaneous_instances.max(1) as usize;
-        let sounds_dir = assets.join("Sounds");
-        use crate::data::assets::names;
+        let sounds_dir = crate::data::assets::AssetDirs::new(assets).sounds;
 
-        // Preload the fixed compiled-in sound set (deduped by path). ClipIds
-        // are assigned densely from 0 in `ALL_SOUNDS` order, so the alarms
-        // (listed first) get ClipId 0 and 1; registering that many pools in
-        // the SpatialSounds keeps its pool ClipIds aligned with the backend's.
-        let mut ids: Vec<crate::audio::ClipId> = Vec::new();
+        let mut sounds = crate::audio::SpatialSounds::new(backend);
         let mut clips = std::collections::HashMap::new();
-        for name in names::ALL_SOUNDS {
-            if let Some(id) = preload_clip(&mut backend, &sounds_dir, name) {
-                ids.push(id);
-                clips.insert(*name, id);
+        for &name in names::ALL_SOUNDS {
+            let path = sounds_dir.join(name);
+            match crate::audio::decode_wav(&path) {
+                Ok(data) => {
+                    clips.insert(name, sounds.register_clip(data, voices));
+                }
+                Err(e) => crate::log_error!("could not preload {}: {e}", path.display()),
             }
         }
-        let enemy = preload_clip(&mut backend, &sounds_dir, names::ENEMY_VISIBLE_SOUND);
-        let targeted = preload_clip(&mut backend, &sounds_dir, names::TARGETED_SOUND);
-
-        let n_clips = ids.iter().map(|c| c.0 + 1).max().unwrap_or(0);
-        let mut sounds = crate::audio::SpatialSounds::new(backend);
-        for _ in 0..n_clips {
-            sounds.register_clip(voices);
-        }
-        sounds.set_alarm_clips(enemy, targeted);
+        sounds.set_alarm_clips(
+            clips.get(names::ENEMY_VISIBLE_SOUND).copied(),
+            clips.get(names::TARGETED_SOUND).copied(),
+        );
 
         Some(Self {
             sounds,
@@ -1438,6 +1426,7 @@ impl GameAudio {
         }
 
         let listener = game.world.audio_listener;
+        let live = game_live_listener(game);
         for ev in std::mem::take(&mut game.world.sound_events) {
             use crate::data::assets::names;
             use crate::sim::world::SoundKind;
@@ -1447,7 +1436,7 @@ impl GameAudio {
                 SoundKind::Destroy => names::DESTROY_SOUND,
             };
             if let Some(&clip) = self.clips.get(name) {
-                self.sounds.play_3d(clip, ev.origin, &listener);
+                self.sounds.play_3d(clip, ev.origin, &listener, live);
                 self.played += 1;
             }
         }
@@ -1472,26 +1461,6 @@ impl GameAudio {
     }
 }
 
-#[cfg(not(test))]
-fn preload_clip(
-    backend: &mut crate::audio::KiraBackend,
-    dir: &std::path::Path,
-    name: &str,
-) -> Option<crate::audio::ClipId> {
-    if name.is_empty() {
-        return None;
-    }
-    let path = dir.join(name);
-    match backend.preload(&path) {
-        Ok(c) => Some(c),
-        Err(e) => {
-            eprintln!("could not preload {}: {e}", path.display());
-            None
-        }
-    }
-}
-
-#[cfg(not(test))]
 fn game_listener_pose(game: &Game) -> (glam::Vec2, f32) {
     use crate::game::ObserverType;
     match game.observer_type {
@@ -1507,21 +1476,13 @@ fn game_listener_pose(game: &Game) -> (glam::Vec2, f32) {
     }
 }
 
-#[cfg(test)]
-struct GameAudio {
-    played: u64,
-}
-
-#[cfg(test)]
-impl GameAudio {
-    fn new(_assets: &std::path::Path, _data: &GameData) -> Option<Self> {
-        None
+/// Where the 3D voice-steal rule measures from this frame
+/// (`cOperationPurge.cpp:1911-1920`): the observer point, else the active robot.
+fn game_live_listener(game: &Game) -> glam::Vec3 {
+    match game.observer_type {
+        crate::game::ObserverType::Point => game.observer_point,
+        _ => game_listener_pose(game).0.extend(0.0),
     }
-    fn frame(&mut self, _game: &mut Game) {}
-    fn debug_line(&self) -> String {
-        format!("sounds_played={}", self.played)
-    }
-    fn stop_all(&mut self) {}
 }
 
 /// Profiler tree pane text (design §5.3): a flat readout of the top-level

@@ -1,6 +1,5 @@
 //! Per-sound voice pools with the original's exact steal/drop semantics
-//! (design §5.4, verified `cOperationPurge.cpp:1908-2005` +
-//! `Sound.cpp:180-200`). Ported at M10.
+//! (`cOperationPurge.cpp:1908-2005`, `Sound.cpp:180-200`).
 //!
 //! PARITY:
 //! - Non-3D `GetFreeBuffer` (`Sound.cpp:180-200`): first idle voice, else
@@ -14,9 +13,9 @@
 //!   played). This is the exact "drop-if-new-sound-is-farthest" rule.
 
 /// One voice slot's *selection-relevant* state: whether it is currently
-/// playing, and (for 3D voices) the distance from the listener at which its
-/// current sound was emitted — the value the original read back via
-/// `IDirectSound3DBuffer::GetPosition` then `Distance3DSqr`.
+/// playing, and (for 3D voices) the distance from the listener's current
+/// position to where its sound was emitted (`GetPosition` then
+/// `Distance3DSqr`, evaluated at decision time).
 #[derive(Copy, Clone, Debug)]
 pub struct Voice {
     pub playing: bool,
@@ -162,9 +161,6 @@ mod tests {
 
     #[test]
     fn threed_drops_when_new_sound_is_the_farthest() {
-        // THE DROP CASE (design blocker item): all voices playing and every
-        // one is CLOSER than the new sound => the new sound is the farthest
-        // => it is silently dropped (None), NOT swapped for a nearer voice.
         let p = pool(&[(true, 20.0), (true, 30.0), (true, 40.0)]);
         assert_eq!(p.play_3d(100.0), None);
     }
