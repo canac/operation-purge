@@ -169,7 +169,12 @@ impl Driver {
                 }
                 break;
             }
+            // A shot captures this frame, before any later step applies.
+            let shot = matches!(step, Step::Shot(_));
             out.push(step);
+            if shot {
+                break;
+            }
         }
         if out.is_empty() && self.steps.is_empty() && self.wait == 0 {
             out.push(Step::Quit);
@@ -207,6 +212,17 @@ mod tests {
         assert!(d.next_frame_steps().is_empty());
         assert!(d.next_frame_steps().is_empty());
         assert_eq!(d.next_frame_steps(), vec![Step::Quit]);
+    }
+
+    #[test]
+    fn shot_ends_its_frame() {
+        let mut d = Driver {
+            steps: parse("shot a\ncursor 0.1 0.1").unwrap().into(),
+            wait: 0,
+            out_dir: PathBuf::new(),
+        };
+        assert_eq!(d.next_frame_steps(), vec![Step::Shot("a".into())]);
+        assert_eq!(d.next_frame_steps(), vec![Step::Cursor(0.1, 0.1)]);
     }
 
     #[test]

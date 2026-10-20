@@ -644,24 +644,6 @@ impl Game {
         } else if self.observer_type == ObserverType::Point {
             self.apply_observer_movement(input, real_dt);
         }
-
-        // PARITY: game-over check at the END of `ExecuteCommands`
-        // (`cOperationPurge.cpp:1351-1414`). Reached only in 3D — the 2D-mode
-        // branch returns at `:1058`, so a team win/lose is only surfaced from
-        // 3D. Uses the *current* (pre-`advance`) world status, exactly as the
-        // C++ runs ExecuteCommands before FrameChange steps the sim. Skipped
-        // while "keep watching" is set. The app stops all sounds first.
-        if !self.ignore_game_end && !self.in_confirm() {
-            let kind = match self.world.status() {
-                Status::Won => Some(GameOverKind::Won),
-                Status::Lost => Some(GameOverKind::Lost),
-                Status::Draw => Some(GameOverKind::Draw),
-                Status::None => None,
-            };
-            if let Some(kind) = kind {
-                self.request_confirm(ConfirmKind::GameOver(kind));
-            }
-        }
     }
 
     /// PARITY: the free-observer command block (`cOperationPurge.cpp:1064-1120`
@@ -793,7 +775,10 @@ impl Game {
         } else {
             None
         };
-        crate::sim::ai::run_ai_except(&mut self.world, dt, skip);
+        {
+            crate::profile_scope!("Move AI robots");
+            crate::sim::ai::run_ai_except(&mut self.world, dt, skip);
+        }
 
         if let Some((id, inp)) = self.player_input.take() {
             self.world.set_input(id, inp);
@@ -813,6 +798,24 @@ impl Game {
         }
 
         self.update_hud_flags();
+        self.check_game_over();
+    }
+
+    /// PARITY: the win/lose/draw check at the END of `FrameChange`
+    /// (`cOperationPurge.cpp:1351-1414`), after the forced-2D switch — so it
+    /// fires on the frame the last friendly dies. Skipped while "keep
+    /// watching" is set.
+    fn check_game_over(&mut self) {
+        if self.ignore_game_end || self.in_confirm() {
+            return;
+        }
+        let kind = match self.world.status() {
+            Status::Won => GameOverKind::Won,
+            Status::Lost => GameOverKind::Lost,
+            Status::Draw => GameOverKind::Draw,
+            Status::None => return,
+        };
+        self.request_confirm(ConfirmKind::GameOver(kind));
     }
 
     /// PARITY: the targeted / above-center / enemy-visible flags computed in
@@ -1150,6 +1153,7 @@ mod tests {
         // Kill the possessed robot, then advance one frame with speed > 0.
         g.world.robots.get_mut(&id).unwrap().health = 0.0;
         g.game_speed = 1.0;
+        g.ignore_game_end = true;
         g.advance(0.016);
         assert!(g.in_2d());
         assert!(g.forced_by_death());

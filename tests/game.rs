@@ -87,6 +87,7 @@ fn play3d_back_to_2d_and_death_forces_2d() {
     // Death forces the 2D map and it may not be cancelled.
     g.world.robots.get_mut(&id).unwrap().health = 0.0;
     g.game_speed = 1.0;
+    g.ignore_game_end = true;
     g.advance(0.016);
     assert!(g.in_2d() && g.forced_by_death());
     assert_eq!(g.active_robot, None);
@@ -373,9 +374,8 @@ fn game_over_modal_pops_in_3d_and_keep_watching_resumes() {
     }
     assert_eq!(g.status(), operation_purge::sim::world::Status::Won);
 
-    // The game-over check runs at the end of execute_commands (3D only).
-    let input = Input::new();
-    g.execute_commands(&input, 0.016);
+    // The game-over check runs at the end of the sim step (`FrameChange`).
+    g.advance(0.016);
     assert_eq!(
         g.confirm_kind(),
         Some(ConfirmKind::GameOver(GameOverKind::Won))
@@ -389,8 +389,29 @@ fn game_over_modal_pops_in_3d_and_keep_watching_resumes() {
     );
     assert!(g.ignore_game_end);
     assert!(matches!(g.screen, Screen::Play3D));
-    g.execute_commands(&Input::new(), 0.016);
+    g.advance(0.016);
     assert!(!g.in_confirm(), "keep-watching suppresses the modal");
+}
+
+#[test]
+fn losing_the_last_friendly_pops_game_over_on_the_death_frame() {
+    let mut g = game();
+    play3d(&mut g);
+    g.game_speed = 1.0;
+    for s in g.world.spawn_info.iter_mut() {
+        s.finished_spawning = true;
+    }
+    let active_team = g.world.active_team;
+    for r in g.world.robots.values_mut() {
+        if r.team == active_team {
+            r.health = 0.0;
+        }
+    }
+    g.advance(0.016);
+    assert_eq!(
+        g.confirm_kind(),
+        Some(ConfirmKind::GameOver(GameOverKind::Lost))
+    );
 }
 
 #[test]
@@ -408,7 +429,8 @@ fn game_over_check_does_not_fire_in_2d_mode() {
     }
     assert_eq!(g.status(), operation_purge::sim::world::Status::Won);
     g.execute_commands(&Input::new(), 0.016);
-    // PARITY: the 2D branch returns before the game-over check (`:1058`).
+    g.advance(0.016);
+    // PARITY: FrameChange returns before the game-over check in 2D (`:1229`).
     assert!(g.in_2d());
     assert!(!g.in_confirm());
 }

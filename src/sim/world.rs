@@ -266,6 +266,7 @@ impl World {
     /// `dt` is the game-time delta (the caller multiplies real dt by game
     /// speed, `cOperationPurge.cpp:1235`).
     pub fn frame(&mut self, dt: f32) {
+        crate::profile_scope!("MoveObjects");
         // ExecuteCommands: fire + set throttle/rotate/elevate/accelerate.
         self.apply_inputs();
 
@@ -300,28 +301,40 @@ impl World {
         // M9: move + expire particles (the original stepped particles here
         // in MoveObjects). No RNG/data needed — kinematics live on each
         // particle; expired slots are freed.
-        self.particles.move_all(dt);
+        {
+            crate::profile_scope!("Move particles");
+            self.particles.move_all(dt);
+        }
 
         // Move projectiles + resolve hits (`cOperationPurge.cpp:702-736`).
         // Projectile trail (travel) effects and per-hit collision effects
         // are driven inside `step_projectiles` (M9).
-        self.step_projectiles(dt);
+        {
+            crate::profile_scope!("Move projectiles");
+            self.step_projectiles(dt);
+        }
 
         // M9: advance static burst effects (fire/collision/destroy) and drop
         // finished ones. `mem::take` sidesteps the split borrow of
         // `self.effects` + `self.particles`/`self.rng`.
-        let mut effects = std::mem::take(&mut self.effects);
-        for eff in effects.iter_mut() {
-            eff.move_self(dt, &self.game_data, &mut self.particles, &mut self.rng);
+        {
+            crate::profile_scope!("Move particle effects");
+            let mut effects = std::mem::take(&mut self.effects);
+            for eff in effects.iter_mut() {
+                eff.move_self(dt, &self.game_data, &mut self.particles, &mut self.rng);
+            }
+            // PARITY: dynamic effects never self-prune (they never reach
+            // `is_finished`); only static burst effects are removed here.
+            effects.retain(|e| !e.is_finished());
+            self.effects = effects;
         }
-        // PARITY: dynamic effects never self-prune (they never reach
-        // `is_finished`); only static burst effects are removed here.
-        effects.retain(|e| !e.is_finished());
-        self.effects = effects;
 
         // RemoveDestroyedRobots -> Transfer (`cOperationPurge.cpp:1239-1240`).
         self.remove_destroyed_robots();
-        self.transfer(dt);
+        {
+            crate::profile_scope!("Transfer");
+            self.transfer(dt);
+        }
 
         // Audio alarms/listener (`cOperationPurge.cpp:1247-1349`) — M10 hook.
         // PARITY: the original increments the 10-frame counter, then updates

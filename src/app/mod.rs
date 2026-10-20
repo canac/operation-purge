@@ -493,29 +493,34 @@ impl AppRunner {
         pressed: bool,
         event_loop: &ActiveEventLoop,
     ) {
-        if self.new_game.is_some() {
-            if pressed {
-                self.handle_new_game_key(key, text, event_loop);
+        // Releases always reach the game input: a key held when a screen or
+        // modal opened would otherwise read as down forever after it closes.
+        if !pressed {
+            if let Some(k) = Key::from_physical_key(key) {
+                self.input.on_key_event(k, false);
             }
+            return;
+        }
+
+        if self.new_game.is_some() {
+            self.handle_new_game_key(key, text, event_loop);
             return;
         }
 
         // Confirm modal: Y/N/C keys (non-blocking, design §1.3).
         if self.game.as_ref().is_some_and(|g| g.in_confirm()) {
-            if pressed {
-                self.handle_confirm_key(key, event_loop);
-            }
+            self.handle_confirm_key(key, event_loop);
             return;
         }
 
         // Esc is NOT intercepted — it flows through as `commandEndGame`
         // (design §5.5); the hard fallback exits only with no game running.
-        if self.game.is_none() && pressed && key == PhysicalKey::Code(KeyCode::Escape) {
+        if self.game.is_none() && key == PhysicalKey::Code(KeyCode::Escape) {
             event_loop.exit();
             return;
         }
         if let Some(k) = Key::from_physical_key(key) {
-            self.input.on_key_event(k, pressed);
+            self.input.on_key_event(k, true);
         }
     }
 
@@ -537,6 +542,7 @@ impl AppRunner {
     /// the posed 3D scene + HUD + (optional) confirm modal + profiler pane
     /// while a game is running.
     fn render(&mut self) {
+        crate::profile_scope!("Render");
         let color = self.status_color();
 
         // New Game screen text (built while the game is frozen / absent).
@@ -599,6 +605,7 @@ impl AppRunner {
         // centers + holes without depth writes; robots; health bars; then
         // depth-sorted projectiles + particles.
         if !in_2d {
+            crate::profile_scope!("Render3D");
             if let (Some((camera, robot_data, center_data, _hud, _prompt, batches)), Some(programs)) =
                 (scene.as_ref(), self.programs.as_ref())
             {
@@ -936,8 +943,12 @@ impl AppRunner {
                 // PARITY: ExecuteCommands runs every frame (`cMainWindow.cpp:923`,
                 // design §5.1).
                 let was_confirm = game.in_confirm();
-                game.execute_commands(&self.input, dt);
+                {
+                    crate::profile_scope!("ExecuteCommands");
+                    game.execute_commands(&self.input, dt);
+                }
                 if self.focused || self.e2e.is_some() {
+                    crate::profile_scope!("FrameChange");
                     game.advance(dt);
                 }
                 // Profiler running toggle (P): thread-local enable.
@@ -1253,6 +1264,18 @@ impl ApplicationHandler for AppRunner {
         _id: WindowId,
         event: WindowEvent,
     ) {
+        // Scripted runs take input only from the script, not the real desk.
+        if self.e2e.is_some()
+            && matches!(
+                event,
+                WindowEvent::KeyboardInput { .. }
+                    | WindowEvent::CursorMoved { .. }
+                    | WindowEvent::MouseInput { .. }
+                    | WindowEvent::MouseWheel { .. }
+            )
+        {
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::KeyboardInput { event, .. } => {
@@ -1312,6 +1335,9 @@ impl ApplicationHandler for AppRunner {
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
+        if self.e2e.is_some() {
+            return;
+        }
         if let DeviceEvent::MouseMotion { delta } = event {
             let scale = self.config.mouse_scale as f64;
             self.input.on_mouse_motion(delta.0 * scale, delta.1 * scale);
