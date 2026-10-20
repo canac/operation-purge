@@ -1,14 +1,6 @@
-//! M2 gate: `math::d3dx` matrix-convention pins (design §3.2, §1.5.3,
-//! §6, §7 M2 "Accept": *"all §6 math vector tables pass, incl.
-//! matrix_conventions.rs element-exact checks"*).
-//!
-//! This is a thin, external-crate-boundary companion to the more
-//! exhaustive `#[cfg(test)]` unit tests inside `src/render/d3dx.rs` — it
-//! exists as its own file because the design document names
-//! `tests/matrix_conventions.rs` explicitly as the M2 acceptance
-//! artifact. It re-derives each expected matrix by hand rather than
-//! importing the unit tests' fixtures, so it also doubles as an
-//! independent cross-check of the public API surface.
+//! `math::d3dx` matrix-convention pins through the public API. A companion
+//! to the unit tests in `src/math/d3dx.rs` that re-derives each expected
+//! matrix by hand rather than sharing their fixtures.
 
 use operation_purge::math::equals;
 use operation_purge::math::d3dx::{billboard_basis, clip_fix, transform_point_homogeneous, Mat4, D3DX_PI};
@@ -60,8 +52,7 @@ fn rotation_matrices_are_orthonormal_and_handed_correctly() {
 #[test]
 fn clip_fix_element_form_matches_2z_minus_w_not_2z_minus_1() {
     let fix = clip_fix();
-    // design §1.5.3: "Clip-space z remap is z' = 2z - w (matrix element
-    // form), never the additive 2z - 1".
+    // The z remap is z' = 2z - w in matrix form, never the additive 2z - 1.
     assert_eq!(fix.get(2, 2), 2.0);
     assert_eq!(fix.get(3, 2), -1.0);
     // A homogeneous point with w != 1 proves this is NOT the post-divide

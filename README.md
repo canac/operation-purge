@@ -132,7 +132,7 @@ file:
 | `game_index` | int | `0` | Selected game definition. |
 | `team_index` | int | `0` | Selected team. |
 | `vsync` | bool | `true` | `false` = the original uncapped loop. |
-| `fps_cap` | int? | none | Frame cap (only with `vsync = false`). |
+| `fps_cap` | int? | none | Frame cap while focused (`0` or unset = uncapped). |
 | `mouse_scale` | float | `1.0` | Multiplies raw mouse deltas (platform-dependent units). |
 | `hud_scale` | float? | none | HUD scale; none = monitor DPI factor. |
 | `seed` | int? | none | RNG seed; none = time-seeded. |

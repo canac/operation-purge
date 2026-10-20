@@ -29,10 +29,7 @@ pub fn split_file_name(name: &str) -> (&str, &str) {
 /// case-insensitivity for the character immediately following a `*`: e.g.
 /// `matches_pattern("MAIN.TXT", "*n.txt")` is `false` even though
 /// `matches_pattern("main.txt", "*n.txt")` is `true` — see the quirk test
-/// below. (design.md's own worked example, `*n.txt` vs `main.txt`
-/// both-lowercase, does not reproduce a false-negative under a byte-exact
-/// port of `cFileSearch.cpp:213-278`; the case-mismatched pair above is
-/// the actual verified quirk and is cited instead — see task deviations.)
+/// below.
 pub fn matches_pattern(name: &str, pattern: &str) -> bool {
     let s = name.as_bytes();
     let p = pattern.as_bytes();
@@ -161,9 +158,7 @@ mod tests {
         assert!(matches_pattern("main.txt", "*n.txt"));
     }
 
-    /// PARITY quirk (verified against `cFileSearch.cpp:213-278`, replacing
-    /// design.md's inaccurate `*n.txt`-vs-`main.txt` example — see the
-    /// doc comment on `matches_pattern`): the `*`-anchor jump uses a raw,
+    /// PARITY quirk (`cFileSearch.cpp:213-278`): the `*`-anchor jump uses a raw,
     /// case-sensitive `strchr`, even though the surrounding comparison is
     /// supposed to be case-insensitive. Pattern `*n.txt` (lowercase `n`)
     /// therefore does NOT match `MAIN.TXT` (uppercase) — `strchr` can't

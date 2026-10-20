@@ -290,7 +290,7 @@ fn hud_ai_mode_line_appears_when_observing_an_ai_robot() {
     assert!(operation_purge::game::hud::status_text(&snap).contains("You are in AI mode"));
 }
 
-// ============================ M11 — full flow ============================
+// =============================== full flow ==============================
 
 /// Possess a friendly robot and drop into 3D play.
 fn play3d(g: &mut Game) {

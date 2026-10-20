@@ -1,12 +1,12 @@
-//! Window + GL context creation (design §3.1).
+//! Window + GL context creation.
 //!
 //! Borderless fullscreen on the primary monitor, physical-resolution
 //! framebuffer, DPI scale tracking. All winit/glutin/glow calls here run
 //! **only at real runtime** — [`RenderWindow::create`] takes an
 //! `ActiveEventLoop`, which unit tests never construct, so the headless test
-//! suite compiles this module without ever invoking it (task constraint).
+//! suite compiles this module without ever invoking it.
 //!
-//! Config selection excludes sRGB-capable-only configs (§3.1: the D3D9 FFP
+//! Config selection excludes sRGB-capable-only configs (the D3D9 FFP
 //! was linear pass-through; an sRGB default framebuffer would retint
 //! everything), requests 24-bit depth, no MSAA. Context is OpenGL 3.3 core
 //! (macOS negotiates 4.1 core — fine, GLSL stays `#version 330`).
@@ -37,7 +37,7 @@ pub struct RenderWindow {
     context: PossiblyCurrentContext,
     pub gl: GlState,
     /// Physical framebuffer size in pixels (Retina-aware; distinct from
-    /// logical size — design §1.4.13, the top HUD bug source on macOS).
+    /// logical size, the top HUD bug source on macOS).
     pub physical_size: (u32, u32),
     /// DPI scale factor reported by the platform; HUD/text metrics are
     /// logical px × this factor.
@@ -74,7 +74,7 @@ impl RenderWindow {
 
         let (window, gl_config) = display_builder
             .build(event_loop, template, |configs| {
-                // §3.1: prefer a config that is NOT sRGB-capable so the default
+                // Prefer a config that is NOT sRGB-capable so the default
                 // framebuffer stays linear; fall back to whatever exists.
                 configs
                     .reduce(|best, cfg| {
@@ -158,7 +158,7 @@ impl RenderWindow {
     }
 
     /// Handle a physical-size change (resize / DPI): resize the surface and
-    /// viewport. Uses physical pixels (design §3.1).
+    /// viewport. Uses physical pixels.
     pub fn resize(&mut self, width: u32, height: u32) {
         let (w, h) = (width.max(1), height.max(1));
         self.physical_size = (w, h);
@@ -204,7 +204,7 @@ impl RenderWindow {
     }
 
     /// Swaps buffers (render-then-swap; the original's present-previous-frame
-    /// latency is dropped — design §1.3 FIX ledger).
+    /// latency is dropped).
     pub fn swap_buffers(&self) {
         let _ = self.surface.swap_buffers(&self.context);
     }

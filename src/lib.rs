@@ -1,12 +1,4 @@
-//! Operation Purge — Rust + OpenGL port.
-//!
-//! Crate root. See the design document (implementation contract) §2
-//! "Module Layout" for the module tree this file declares.
-//!
-//! Milestone M0 establishes the module skeleton and the shared foundational
-//! types (`ids`, `error`, `math::{equals, Rgba}`, `rng`, `app::config`) that
-//! every later milestone depends on. Everything else is a type stub with
-//! `todo!()`/`unimplemented!()` bodies until its owning milestone lands.
+//! Operation Purge: a Rust + OpenGL port of the 2011 C++/Direct3D 9 game.
 
 pub mod app;
 pub mod errorlog;

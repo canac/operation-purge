@@ -1,17 +1,16 @@
-//! Status-text assembly (design §5.3), replacing `cOverlay2D`'s HUD-text
-//! half. Ported verbatim from `cRobot::GetInfoString` (`cRobot.cpp:595-669`)
+//! Status-text assembly, replacing `cOverlay2D`'s HUD-text half. Ported verbatim from `cRobot::GetInfoString` (`cRobot.cpp:595-669`)
 //! + `cOperationPurge::GetInfoString` (`cOperationPurge.cpp:518-606`).
 //!
-//! This module builds the status string from a supplied [`HudSnapshot`]
-//! (the layout / assembly half of M5); polling the live game to fill the
-//! snapshot is M8. `s_Precision = 2` (`cOperationPurge.cpp:21`).
+//! This module builds the status string from a supplied [`HudSnapshot`];
+//! `Game` polls the live world to fill it. `s_Precision = 2`
+//! (`cOperationPurge.cpp:21`).
 //!
 //! PARITY: the four conditional lines are emitted in the source's order —
 //! AI mode, then enemy visible, then targeted, then above-center
 //! (`cOperationPurge.cpp:601-604`; EnemyVisible outranks Targeted, code
-//! over docs, design §1.3). The enemy-visible flag itself is refreshed
-//! every 0.25 s of *game* time (`cOperationPurge.cpp:586`) — that polling
-//! lives in the game loop (M8); here it is just a snapshot field.
+//! over docs). The enemy-visible flag itself is refreshed every 0.25 s of
+//! *game* time (`cOperationPurge.cpp:586`) by `Game`; here it is just a
+//! snapshot field.
 
 /// Enemy-visible HUD/alarm poll interval, in game-time seconds.
 pub const ENEMY_VISIBLE_POLL_SECONDS: f32 = 0.25;
