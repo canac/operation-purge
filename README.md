@@ -125,7 +125,7 @@ file:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `assets_dir` | string | `"./assets"` | Asset tree (relative → resolved against the exe). |
+| `assets_dir` | string | `"./assets"` | Asset tree. Relative: tried beside the exe, then the working dir, else the embedded copy is unpacked to the data dir. |
 | `maze_file` | string | `"MazeFiles/*.maz"` | Maze path **or glob pattern**; the pattern is persisted, not the resolved file. |
 | `game_index` | int | `0` | Selected game definition. |
 | `team_index` | int | `0` | Selected team. |
@@ -209,12 +209,19 @@ produces the binary. Distributable bundles are an optional extra step:
   ```
   Then copy the `assets/` tree next to the bundle (or into its
   `Resources/`) and point `assets_dir` at it.
-- **Windows / Linux zips:** ship the release binary plus the `assets/`
-  directory:
+- **Windows (single `.exe`, cross-built from macOS):** the `assets/` tree is
+  compiled into the binary. On first run, if no `assets/` sits beside the exe
+  or in the working dir, it is unpacked to `%APPDATA%\operation-purge\assets`
+  (refreshed when the version changes; user-added mazes are kept).
   ```sh
-  cargo build --release
-  zip -r operation-purge-<os>.zip target/release/operation-purge assets/
+  brew install mingw-w64
+  rustup target add x86_64-pc-windows-gnu
+  scripts/build-windows.sh      # -> target/x86_64-pc-windows-gnu/release/operation-purge.exe
   ```
+  Ship just the `.exe`. It has no console window and needs no extra DLLs on
+  Windows 10+.
+- **Linux:** same embedding applies, so the release binary runs alone; it
+  unpacks to `~/.local/share/operation-purge/assets`.
 
 ## Standing visual / audio gates (need desktop sign-off)
 

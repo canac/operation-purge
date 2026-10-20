@@ -9,6 +9,7 @@
 //! glue that owns the window, GL renderers, and audio.
 
 pub mod config;
+pub mod embedded;
 pub mod e2e;
 pub mod window;
 

@@ -1,0 +1,5 @@
+# Cross-compile to Windows from macOS/Linux; needs `brew install mingw-w64`.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+# Static CRT so the .exe ships without MinGW runtime DLLs.
+rustflags = ["-C", "target-feature=+crt-static"]

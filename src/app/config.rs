@@ -30,8 +30,9 @@ fn default_mouse_scale() -> f32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Relative → resolved against the executable's directory; overridable
-    /// by `--assets` / `OP_ASSETS`.
+    /// Relative → tried beside the executable, then the working dir, else
+    /// the embedded copy is unpacked to the data dir (`app::embedded`);
+    /// overridable by `--assets` / `OP_ASSETS`.
     pub assets_dir: String,
 
     /// May hold a glob pattern (libs-map §4, "Wildcard maze selection");

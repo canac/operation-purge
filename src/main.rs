@@ -3,7 +3,10 @@
 //! `anyhow` is used only here — every subsystem below `main` returns a
 //! typed error (`operation_purge::error`), per design §1.2.
 
-use operation_purge::app::config::Config;
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
+use operation_purge::app::{config::Config, embedded};
+use std::path::Path;
 
 struct Args {
     assets_dir: Option<String>,
@@ -74,6 +77,33 @@ fn parse_args() -> anyhow::Result<Args> {
     Ok(args)
 }
 
+/// A relative configured path is tried beside the exe, then against the
+/// working dir; if neither exists, the embedded assets are unpacked to the
+/// user data dir and that is used.
+fn resolve_assets_dir(configured: &str) -> String {
+    let rel = Path::new(configured);
+    if rel.is_absolute() {
+        return configured.to_string();
+    }
+    let beside_exe = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(rel)))
+        .filter(|p| p.is_dir());
+    if let Some(p) = beside_exe {
+        return p.display().to_string();
+    }
+    if rel.is_dir() {
+        return configured.to_string();
+    }
+    if let Some(dest) = embedded::default_unpack_dir() {
+        match embedded::ensure_unpacked(&dest) {
+            Ok(()) => return dest.display().to_string(),
+            Err(e) => eprintln!("warning: could not unpack assets to {}: {e}", dest.display()),
+        }
+    }
+    configured.to_string()
+}
+
 fn main() -> anyhow::Result<()> {
     let args = parse_args()?;
 
@@ -82,6 +112,8 @@ fn main() -> anyhow::Result<()> {
         config.assets_dir = assets_dir;
     } else if let Ok(env_assets) = std::env::var("OP_ASSETS") {
         config.assets_dir = env_assets;
+    } else {
+        config.assets_dir = resolve_assets_dir(&config.assets_dir);
     }
     if let Some(seed) = args.seed {
         config.seed = Some(seed);
