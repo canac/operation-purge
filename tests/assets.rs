@@ -7,7 +7,7 @@
 //! `GameData.toml`, so these tests pin the compiled-in registry against what
 //! is actually on disk and in the expected format.
 
-use operation_purge::data::assets::names;
+use operation_purge::data::assets::{names, AssetDirs};
 use operation_purge::render::textures::{decode_image, ProcessMode};
 use std::path::Path;
 
@@ -15,15 +15,19 @@ fn assets_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("assets")
 }
 
+fn dirs() -> AssetDirs {
+    AssetDirs::new(assets_dir())
+}
+
 /// Every sound and texture in the registry must exist on disk,
 /// or the game logs "could not preload ..." / falls back to a white texture.
 #[test]
 fn every_registered_asset_exists_on_disk() {
-    let sounds = assets_dir().join("Sounds");
+    let sounds = dirs().sounds;
     for name in names::ALL_SOUNDS {
         assert!(sounds.join(name).is_file(), "missing Sounds/{name}");
     }
-    let textures = assets_dir().join("Textures");
+    let textures = dirs().textures;
     for name in names::ALL_TEXTURES {
         assert!(textures.join(name).is_file(), "missing Textures/{name}");
     }
@@ -34,7 +38,7 @@ fn every_registered_asset_exists_on_disk() {
 /// directly with no per-format branch).
 #[test]
 fn every_sound_is_16bit_mono_pcm() {
-    let sounds = assets_dir().join("Sounds");
+    let sounds = dirs().sounds;
     for name in names::ALL_SOUNDS {
         let path = sounds.join(name);
         let reader =
@@ -53,7 +57,7 @@ fn every_sound_is_16bit_mono_pcm() {
 /// Every registered texture must decode as a non-empty RGBA8 image (PNG).
 #[test]
 fn every_texture_decodes_as_rgba8() {
-    let textures = assets_dir().join("Textures");
+    let textures = dirs().textures;
     for name in names::ALL_TEXTURES {
         let path = textures.join(name);
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
