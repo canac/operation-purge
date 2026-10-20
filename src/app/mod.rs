@@ -573,7 +573,7 @@ impl AppRunner {
         // 2D-map snapshot (`Render2D`): full-screen in Map2D, the minimap in
         // 3D while `m_bShowMap`, plus the crosshair in 3D.
         let active_game = self.game.as_ref().filter(|_| new_game_lines.is_none());
-        let in_2d = active_game.is_some_and(Game::in_2d);
+        let in_2d = active_game.is_some_and(Game::shows_2d);
         let show_minimap = active_game.is_some_and(|g| g.show_map);
         let map = active_game.map(|game| {
             (

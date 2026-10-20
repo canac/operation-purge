@@ -248,6 +248,11 @@ impl Game {
         matches!(self.screen, Screen::Map2D { .. })
     }
 
+    /// The 2D map is on screen, either directly or behind a confirm modal.
+    pub fn shows_2d(&self) -> bool {
+        self.in_2d() || (self.in_confirm() && matches!(self.confirm_return, Some(Screen::Map2D { .. })))
+    }
+
     /// In 3D play or the free observer camera (both step the sim).
     pub fn in_3d(&self) -> bool {
         matches!(self.screen, Screen::Play3D | Screen::Observer)
@@ -984,7 +989,7 @@ impl Game {
     /// The HUD text for the current mode (`Render2D`, `cOperationPurge.cpp:2837-2856`):
     /// in 2D only the robot under the mouse, else the full status block.
     pub fn status_text(&self) -> String {
-        if self.in_2d() {
+        if self.shows_2d() {
             let hovered = self.robot_under_point(self.win_to_log(self.cursor_win));
             return hud::robot_info(&hovered.and_then(|id| self.robot_hud(id)));
         }
@@ -1102,6 +1107,19 @@ mod tests {
         let mut g = game();
         assert!(!g.set_observer());
         assert!(g.in_2d());
+    }
+
+    #[test]
+    fn modal_over_the_map_still_shows_the_map() {
+        let mut g = game();
+        g.screen = Screen::Play3D;
+        g.enter_2d_mode(true);
+        g.request_confirm(ConfirmKind::GameOver(GameOverKind::Lost));
+        assert!(g.shows_2d());
+        let mut g = game();
+        g.screen = Screen::Play3D;
+        g.request_confirm(ConfirmKind::GameOver(GameOverKind::Lost));
+        assert!(!g.shows_2d());
     }
 
     #[test]
