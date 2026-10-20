@@ -1,4 +1,4 @@
-//! Verbatim left-handed, Z-up, **row-vector** D3DX math (design §3.2) —
+//! Verbatim left-handed, Z-up, **row-vector** D3DX math —
 //! the single most important parity mechanism in the port.
 //!
 //! A row-major `Mat4` newtype over `glam` storage with `v * M`
@@ -6,7 +6,7 @@
 //! sites (`world = rot_z * scale * translate`) read identically in Rust —
 //! the entire class of per-site transposition mistakes is eliminated.
 //!
-//! Conversion to OpenGL happens at exactly one boundary (design §3.2):
+//! Conversion to OpenGL happens at exactly one boundary:
 //! `proj_final = proj_d3d * CLIP_FIX` (row-vector order), giving clip-space
 //! `z' = 2z - w` — **never** the post-divide constant `2z - 1`. Uniform
 //! uploads pass the row-major bytes with `transpose = FALSE`, so GL reads
@@ -26,7 +26,8 @@
 //! shader needs). None of
 //! `glam::Mat4`'s own camera/rotation helper *methods* are used (they are
 //! right-handed/column-vector and would silently produce the wrong
-//! matrices); only its storage is borrowed.
+//! matrices); only its storage and its matrix/vector products (applied to
+//! the transposed view, see [`Mat4::mul`]) are borrowed.
 //!
 //! ## `D3DXMATRIX` source note
 //!
@@ -196,39 +197,22 @@ impl Mat4 {
     /// (`matA * matB` in every C++ call site, e.g. `cSprite3D.cpp:168`
     /// `matRotation * m_matBillboard * matTranslate * m_matView`, reads
     /// identically in Rust as `rot.mul(&billboard).mul(&translate).mul(&view)`).
-    /// Standard matrix-product formula `out[i][j] = sum_k self[i][k]*rhs[k][j]`
-    /// (row/column-vector convention only changes which side you multiply
-    /// a *vector* on, not how two matrices multiply).
     pub fn mul(&self, rhs: &Mat4) -> Mat4 {
-        let a = self.0.to_cols_array_2d();
-        let b = rhs.0.to_cols_array_2d();
-        let mut out = [[0.0f32; 4]; 4];
-        for (i, out_row) in out.iter_mut().enumerate() {
-            for (j, out_elem) in out_row.iter_mut().enumerate() {
-                *out_elem = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j];
-            }
-        }
-        Mat4(glam::Mat4::from_cols_array_2d(&out))
+        // glam holds our transpose, and (AB)^T = B^T A^T.
+        Mat4(rhs.0 * self.0)
     }
 
     /// Transform a row-vector `[x,y,z,w]` by this matrix:
-    /// `out[j] = sum_i v[i] * self[i][j]` (design §3.2). Used by tests and
-    /// by the eventual CLIP_FIX/upload pipeline (M4) to sanity-check a
-    /// homogeneous point end to end.
+    /// `out[j] = sum_i v[i] * self[i][j]`.
     pub fn mul_row_vec4(&self, v: [f32; 4]) -> [f32; 4] {
-        let m = self.0.to_cols_array_2d();
-        let mut out = [0.0f32; 4];
-        for (j, out_elem) in out.iter_mut().enumerate() {
-            *out_elem = v[0] * m[0][j] + v[1] * m[1][j] + v[2] * m[2][j] + v[3] * m[3][j];
-        }
-        out
+        (self.0 * Vec4::from(v)).to_array()
     }
 }
 
 /// Composed with the projection (row-vector order:
 /// `proj_final = proj_d3d.mul(&clip_fix())`) to remap D3D clip z in `[0,w]`
 /// to GL clip z in `[-w,w]`: `z' = 2z - w`, matrix elements `[2][2]=2.0`,
-/// `[3][2]=-1.0` — **never** the additive `2z-1` (design §1.5.3, §3.2).
+/// `[3][2]=-1.0` — **never** the additive `2z-1`.
 ///
 /// Proof this is `z' = 2z - w` and not `2z - 1`: for a row-vector
 /// `[x,y,z,w] * CLIP_FIX`, the z' output column (`j=2`) picks up
@@ -250,7 +234,7 @@ pub fn clip_fix() -> Mat4 {
 /// the emitter's anti-parallel degenerate case (`cParticleEmitter.cpp:113`
 /// — a zero quaternion normalizes to `w == 0`, tripping the fallback).
 ///
-/// PARITY (design §1.3, source-map §3.6/§7): NaN inputs propagate — `norm`
+/// PARITY: NaN inputs propagate — `norm`
 /// is then `NaN`, `norm == 0.0` is false, and the divide yields `NaN`
 /// (the "NaN on zero emitter velocity" path). Do **not** add a finiteness
 /// guard.
