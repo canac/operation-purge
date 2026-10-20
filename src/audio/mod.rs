@@ -343,12 +343,16 @@ impl<B: SoundBackend> SpatialSounds<B> {
     }
 }
 
-/// Upper bound on simultaneously live kira sounds for `clips` pools of
-/// `voices` each plus the two alarm loops. Doubled because a stolen voice
-/// keeps its slot while its stop tween fades out.
+/// kira sound slots for `clips` pools of `voices` each plus the two alarm
+/// loops. At least [`MIN_SOUND_CAPACITY`], because kira frees a stopped
+/// sound's slot only after its audio thread has processed the stop.
 pub fn sound_capacity(clips: usize, voices: usize) -> usize {
-    2 * (clips * voices + 2)
+    (2 * (clips * voices + 2)).max(MIN_SOUND_CAPACITY)
 }
+
+/// Headroom for rapid steal/replay cycles (high game speed, uncapped frame
+/// rate) whose stopped sounds haven't been reclaimed yet.
+pub const MIN_SOUND_CAPACITY: usize = 1024;
 
 /// Decode a WAV file into a kira `StaticSoundData`.
 ///
@@ -517,7 +521,8 @@ mod tests {
 
     #[test]
     fn capacity_covers_every_pool_voice_twice_plus_alarms() {
-        assert_eq!(sound_capacity(7, 10), 144);
+        assert_eq!(sound_capacity(7, 10), MIN_SOUND_CAPACITY);
+        assert_eq!(sound_capacity(7, 100), 1404);
     }
 
     #[derive(Default)]
