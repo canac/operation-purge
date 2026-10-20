@@ -12,7 +12,7 @@ use operation_purge::maze::Maze;
 use operation_purge::rng::GameRng;
 use operation_purge::sim::particles::ParticleEffect;
 use operation_purge::sim::projectile::Projectile;
-use operation_purge::sim::world::{RobotInput, World};
+use operation_purge::sim::world::{RobotInput, SoundKind, World};
 use glam::Vec3;
 use std::path::{Path, PathBuf};
 
@@ -103,9 +103,11 @@ fn firing_spawns_effects_and_particles() {
             },
         );
         let holes_before = world.holes.entries.len();
-        world.frame(dt);
+        world.frame(dt, Some(id));
 
-        if !world.projectiles.is_empty() {
+        // A shot fired point-blank at a wall is created and destroyed in the
+        // same frame, so look for its fire sound rather than the projectile.
+        if world.sound_events.iter().any(|e| matches!(e.kind, SoundKind::Fire(_))) {
             saw_projectile = true;
         }
         if world.particles.live_count() > 0 {
@@ -168,7 +170,7 @@ fn projectile_travel_effect_is_dynamic_and_drives_a_trail() {
     let mut trail_particles = false;
     let mut checked_dynamic = false;
     for _ in 0..120 {
-        world.frame(dt);
+        world.frame(dt, None);
         for p in &world.projectiles {
             if let Some(eff) = &p.travel_effect {
                 assert!(eff.is_dynamic, "trail must be a dynamic effect");
@@ -204,7 +206,7 @@ fn destroying_a_robot_spawns_its_destroy_effect() {
     world.robots.get_mut(&id).unwrap().health = 0.0;
 
     let dt = 1.0 / 60.0;
-    world.frame(dt); // no fire input -> the sole event is the destruction
+    world.frame(dt, None);
 
     assert!(world.robots.is_empty(), "the dead robot must be removed");
     assert_eq!(

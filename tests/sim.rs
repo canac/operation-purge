@@ -123,6 +123,7 @@ fn add_collision_truncates_by_offset_over_move_component() {
         kind: CollisionKind::Wall,
         robot_id: None,
         wall_axis: PlaneAxis::X,
+        position: Vec2::ZERO,
         vec2_direction: Vec2::ZERO,
     };
     r.add_collision(c);
@@ -330,7 +331,7 @@ fn status_won_when_all_enemies_dead() {
             r.health = 0.0;
         }
     }
-    world.frame(0.0); // removes the destroyed enemies
+    world.frame(0.0, None); // removes the destroyed enemies
     assert_eq!(world.status(), Status::Won);
 }
 
@@ -343,7 +344,7 @@ fn status_lost_when_active_team_wiped() {
             r.health = 0.0;
         }
     }
-    world.frame(0.0);
+    world.frame(0.0, None);
     assert_eq!(world.status(), Status::Lost);
 }
 
@@ -353,7 +354,7 @@ fn status_draw_when_everyone_dead() {
     for r in world.robots.values_mut() {
         r.health = 0.0;
     }
-    world.frame(0.0);
+    world.frame(0.0, None);
     assert_eq!(world.status(), Status::Draw);
 }
 
@@ -383,9 +384,11 @@ fn run_scripted_battle(seed: u64, cap: u32) -> (u32, Status) {
         }
         let ids: Vec<RobotId> = world.robots.keys().copied().collect();
         for id in ids {
+            let r = world.robots.get_mut(&id).unwrap();
+            r.ai = None;
             world.set_input(id, input);
         }
-        world.frame(dt);
+        world.frame(dt, None);
         tick += 1;
     }
 }

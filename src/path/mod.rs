@@ -14,7 +14,7 @@
 //!   DOES append the goal (`cPathFinder.cpp:516`).
 //! - Low-level lookahead cap `min(2, len-1)` rooms is applied by the caller
 //!   (`cAIRobot::FindLowLevelPath`, `cAIRobot.cpp:765`); see
-//!   [`PathFinder::LOOKAHEAD_CAP`].
+//!   [`LOOKAHEAD_CAP`].
 //!
 //! The building-collision helpers (`IntersectRect`/`IntersectMovingRect`,
 //! `cBuilding.cpp`) live once on [`crate::maze::building::Building`];
@@ -29,20 +29,9 @@ use crate::math::intersect::{MovingRect, Rect};
 use astar::AStar;
 use glam::Vec2;
 
-/// A resolved path: a sequence of waypoints from start to goal.
-pub struct Path {
-    pub waypoints: Vec<Vec2>,
-}
-
-/// Namespace holder mirroring `cPathFinder` — the lookahead cap constant
-/// plus the free-function entry points below.
-pub struct PathFinder;
-
-impl PathFinder {
-    /// Lookahead cap for the low-level corner-waypoint strategy —
-    /// PARITY, `cAIRobot.cpp:765` (`std::min<int> (2, size - 1)`).
-    pub const LOOKAHEAD_CAP: usize = 2;
-}
+/// How many high-level rooms ahead the low-level path aims — PARITY,
+/// `cAIRobot.cpp:765` (`std::min<int> (2, size - 1)`).
+pub const LOOKAHEAD_CAP: usize = 2;
 
 /// The building's room graph: borrows a [`Building`] (for its maze, world
 /// scale, and wall-collision queries) and adds the room/corner adjacency the
@@ -238,10 +227,14 @@ fn rem(a: f32, b: f32) -> f32 {
 /// FIX: the C++ computed the centered start/goal (`cPathFinder.cpp:439-442`)
 /// but searched the raw points, so waypoints kept the robot's in-room offset
 /// and a wall-hugging robot got low-level goals inside walls two rooms ahead.
-pub fn find_high_level_path(graph: &RoomGraph, start: Vec2, goal: Vec2) -> Option<Vec<Vec2>> {
+pub fn find_high_level_path(
+    graph: &RoomGraph,
+    astar: &mut AStar,
+    start: Vec2,
+    goal: Vec2,
+) -> Option<Vec<Vec2>> {
     let start = graph.room_center(start);
     let goal = graph.room_center(goal);
-    let mut astar = AStar::new();
     astar.search(
         start,
         goal,
@@ -255,12 +248,12 @@ pub fn find_high_level_path(graph: &RoomGraph, start: Vec2, goal: Vec2) -> Optio
 /// point IS appended (`cPathFinder.cpp:516`). `None` if no path exists.
 pub fn find_low_level_path(
     graph: &RoomGraph,
+    astar: &mut AStar,
     start: Vec2,
     goal: Vec2,
     wall_dist: f32,
     size: Vec2,
 ) -> Option<Vec<Vec2>> {
-    let mut astar = AStar::new();
     let mut path = astar.search(
         start,
         goal,
@@ -326,7 +319,7 @@ mod tests {
         let graph = RoomGraph::new(&building);
         let start = room_center(0, 0, 10.0);
         let goal = room_center(3, 0, 10.0);
-        let path = find_high_level_path(&graph, start, goal).expect("path");
+        let path = find_high_level_path(&graph, &mut AStar::new(), start, goal).expect("path");
         assert_eq!(rooms(&graph, &path), vec![(0, 0), (1, 0), (2, 0), (3, 0)]);
     }
 
@@ -337,7 +330,7 @@ mod tests {
         let graph = RoomGraph::new(&building);
         let start = Vec2::new(2.0, 3.0);
         let goal = Vec2::new(27.0, 21.0);
-        let path = find_high_level_path(&graph, start, goal).expect("path");
+        let path = find_high_level_path(&graph, &mut AStar::new(), start, goal).expect("path");
         assert_eq!(path[0], room_center(0, 0, 10.0));
         for p in &path {
             assert_eq!(*p, room_center((p.x / 10.0) as i32, (p.y / 10.0) as i32, 10.0));
@@ -389,7 +382,7 @@ mod tests {
             let expected = bfs_room_steps(&maze, from, to);
             let building = test_building(maze);
             let graph = RoomGraph::new(&building);
-            let path = find_high_level_path(&graph, room_center(from.0, from.1, 10.0), room_center(to.0, to.1, 10.0));
+            let path = find_high_level_path(&graph, &mut AStar::new(), room_center(from.0, from.1, 10.0), room_center(to.0, to.1, 10.0));
             proptest::prop_assert_eq!(path.map(|p| p.len() - 1), expected);
         }
     }
@@ -404,9 +397,9 @@ mod tests {
         let graph = RoomGraph::new(&building);
         let size = Vec2::new(1.6, 1.6);
         let start = Vec2::new(5.0, 9.0);
-        let high = find_high_level_path(&graph, start, room_center(2, 0, 10.0)).expect("high");
-        let goal = high[PathFinder::LOOKAHEAD_CAP.min(high.len() - 1)];
-        assert!(find_low_level_path(&graph, start, goal, 3.0, size).is_some());
+        let high = find_high_level_path(&graph, &mut AStar::new(), start, room_center(2, 0, 10.0)).expect("high");
+        let goal = high[LOOKAHEAD_CAP.min(high.len() - 1)];
+        assert!(find_low_level_path(&graph, &mut AStar::new(), start, goal, 3.0, size).is_some());
     }
 
     /// A wall between room (0,0) and (1,0) forces the high-level path to
@@ -423,7 +416,7 @@ mod tests {
         let graph = RoomGraph::new(&building);
         let start = room_center(0, 0, 10.0);
         let goal = room_center(1, 0, 10.0);
-        let path = find_high_level_path(&graph, start, goal).expect("path");
+        let path = find_high_level_path(&graph, &mut AStar::new(), start, goal).expect("path");
         let seq = rooms(&graph, &path);
         assert_eq!(seq.first(), Some(&(0, 0)));
         assert_eq!(seq.last(), Some(&(1, 0)));
@@ -439,7 +432,7 @@ mod tests {
         let start = room_center(0, 0, 10.0);
         let goal = room_center(0, 0, 10.0);
         let size = Vec2::new(1.6, 1.6);
-        let path = find_low_level_path(&graph, start, goal, 3.0, size).expect("path");
+        let path = find_low_level_path(&graph, &mut AStar::new(), start, goal, 3.0, size).expect("path");
         // start visible to goal (same point) => [start, goal].
         assert_eq!(path.first().copied(), Some(start));
         assert_eq!(path.last().copied(), Some(goal));

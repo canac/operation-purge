@@ -79,11 +79,20 @@ pub struct Game {
     pub active_robot: Option<RobotId>,
     /// `m_bActiveIsEnemy`.
     pub active_is_enemy: bool,
+    /// `m_idActiveRobotOld` / `m_ObserverTypeOld`: the vantage held when 2D
+    /// mode was entered voluntarily, whose robot gets its AI reset on
+    /// `SetObserver`.
+    active_robot_old: Option<RobotId>,
+    observer_type_old: ObserverType,
     /// `m_pt3Observer` / `m_angObserverTheta` / `m_angObserverPhi` (the free
     /// observer camera pose; the M8 possession loop leaves it at defaults).
     pub observer_point: Vec3,
     pub observer_theta: f32,
     pub observer_phi: f32,
+
+    /// `fNextFire`, the observer cheat-fire cooldown (a function-local
+    /// static in `ExecuteCommands`, `cOperationPurge.cpp:1204`).
+    cheat_fire_cooldown: f32,
 
     /// `m_bEnableCheating` (empty New Game password enables cheats, design
     /// §1.3). Default off until the New Game screen sets it (M11).
@@ -143,9 +152,12 @@ impl Game {
             observer_type: ObserverType::Robot,
             active_robot: None,
             active_is_enemy: false,
+            active_robot_old: None,
+            observer_type_old: ObserverType::Robot,
             observer_point: Vec3::ZERO,
             observer_theta: 0.0,
             observer_phi: 0.0,
+            cheat_fire_cooldown: 0.0,
             cheats_enabled: false,
             show_map: true,
             enemy_visible: false,
@@ -321,6 +333,10 @@ impl Game {
         self.screen = Screen::Map2D { forced_by_death };
         if forced_by_death {
             self.active_robot = None;
+            self.active_robot_old = None;
+        } else {
+            self.active_robot_old = self.active_robot;
+            self.observer_type_old = self.observer_type;
         }
     }
 
@@ -366,12 +382,17 @@ impl Game {
 
     /// PARITY: `commandSetObserver` handler (`cOperationPurge.cpp:979-1018`).
     /// Commits the selected observer and drops into 3D. Returns `false` (no
-    /// transition) when nothing is selected. M11: the previous AI robot's
-    /// `Reset()` on hand-back is deferred.
+    /// transition) when nothing is selected.
     pub fn set_observer(&mut self) -> bool {
         let valid = self.active_robot.is_some() || self.observer_type == ObserverType::Point;
         if !valid {
             return false;
+        }
+        // The previous robot goes back under computer control (`:985-996`).
+        if !self.forced_by_death() && self.observer_type_old != ObserverType::Point {
+            if let Some(old) = self.active_robot_old {
+                self.world.reset_ai(old);
+            }
         }
         if self.observer_type == ObserverType::Point {
             self.active_robot = None;
@@ -458,6 +479,9 @@ impl Game {
         self.observer_type = ObserverType::Robot;
         self.active_robot = None;
         self.active_is_enemy = false;
+        self.active_robot_old = None;
+        self.observer_type_old = ObserverType::Robot;
+        self.cheat_fire_cooldown = 0.0;
         self.ignore_game_end = false;
         self.confirm_return = None;
         self.enemy_visible = false;
@@ -598,7 +622,12 @@ impl Game {
             && (!self.active_is_enemy || self.cheats_enabled)
         {
             match self.observer_type {
-                ObserverType::Robot => self.observer_type = ObserverType::AiRobot,
+                ObserverType::Robot => {
+                    self.observer_type = ObserverType::AiRobot;
+                    if let Some(id) = self.active_robot {
+                        self.world.reset_ai(id);
+                    }
+                }
                 ObserverType::AiRobot => self.observer_type = ObserverType::Robot,
                 ObserverType::Point => {}
             }
@@ -731,7 +760,7 @@ impl Game {
         // bypasses the cooldown, matching the `bPressed` OR clauses.
         if self.cheats_enabled {
             let n = self.world.game_data.projectile_types.len();
-            let cooldown_ready = self.world.cheat_fire_cooldown <= 0.0;
+            let cooldown_ready = self.cheat_fire_cooldown <= 0.0;
             let general_down = self.cmd_down(Command::FireProjectiles, input);
             let general_pressed = self.cmd_pressed(Command::FireProjectiles, input);
             let observer_pos = self.observer_point;
@@ -747,14 +776,13 @@ impl Game {
                 {
                     self.world
                         .add_projectile(ty, None, observer_pos, 0.0, theta, phi);
-                    self.world.cheat_fire_cooldown += 0.03;
+                    self.cheat_fire_cooldown += 0.03;
                 }
             }
             // fNextFire = fMax(fNextFire - fGameTimeElapsed, 0) (`:1223`). The
             // cheat clock ticks in *game* time.
             let game_dt = real_dt * self.game_speed;
-            self.world.cheat_fire_cooldown =
-                (self.world.cheat_fire_cooldown - game_dt).max(0.0);
+            self.cheat_fire_cooldown = (self.cheat_fire_cooldown - game_dt).max(0.0);
         }
     }
 
@@ -777,23 +805,18 @@ impl Game {
         // Fresh inputs each frame (stale possession/AI input must not linger).
         self.world.clear_inputs();
 
-        // AI drives every robot except the player-possessed one
-        // (`:631-637` — active robot uses CalcNewPosition, not …AI).
-        let skip = if self.observer_type != ObserverType::AiRobot {
-            self.active_robot
-        } else {
+        // `MoveObjects` drives the active robot by hand unless it is
+        // AI-observed (`:631-637`).
+        let possessed = if self.observer_type == ObserverType::AiRobot {
             None
+        } else {
+            self.active_robot
         };
-        {
-            crate::profile_scope!("Move AI robots");
-            crate::sim::ai::run_ai_except(&mut self.world, dt, skip);
-        }
-
         if let Some((id, inp)) = self.player_input.take() {
             self.world.set_input(id, inp);
         }
 
-        self.world.frame(dt);
+        self.world.frame(dt, possessed);
 
         // Active robot destroyed ⇒ force the 2D map (`:1242-1245`).
         if self.observer_type != ObserverType::Point {
@@ -845,7 +868,7 @@ impl Game {
 
         // Targeted: any AI robot whose FSM is hunting the active robot
         // (`cRobot::IsTargetingRobot`).
-        for ai in self.world.ai.values() {
+        for ai in self.world.robots.values().filter_map(|r| r.ai.as_ref()) {
             if ai.state == crate::sim::ai::AiState::TargetingRobot
                 && ai.targeted_robot == Some(active)
             {

@@ -18,6 +18,7 @@ use crate::math::intersect::{
 };
 use crate::math::{equals, sign};
 use crate::rng::GameRng;
+use crate::sim::ai::AiRuntime;
 use glam::{Vec2, Vec3};
 use std::f32::consts::PI;
 
@@ -79,6 +80,8 @@ pub struct Collision2D {
     pub kind: CollisionKind,
     pub robot_id: Option<RobotId>,
     pub wall_axis: PlaneAxis,
+    /// `pt2Position`: the other robot's next position; `(0,0)` for walls.
+    pub position: Vec2,
     /// The *other* robot's velocity (used by crash-damage impulse); `(0,0)`
     /// for walls (`NoCollision2D` default, `Intersect.h:158`).
     pub vec2_direction: Vec2,
@@ -93,6 +96,7 @@ impl Collision2D {
             kind: CollisionKind::None,
             robot_id: None,
             wall_axis: PlaneAxis::Invalid,
+            position: Vec2::ZERO,
             vec2_direction: Vec2::ZERO,
         }
     }
@@ -151,6 +155,10 @@ pub struct Robot {
     pub health_start: f32,
     pub projectile_armor: f32,
     pub crash_armor: f32,
+
+    /// The `cAIRobot` half. Every spawned robot has one; a robot without it
+    /// is always driven by `World::inputs`.
+    pub ai: Option<AiRuntime>,
 }
 
 impl Robot {
@@ -204,6 +212,7 @@ impl Robot {
             health_start: options.health_start,
             projectile_armor: options.projectile_armor,
             crash_armor: options.crash_armor,
+            ai: None,
         }
     }
 
@@ -464,6 +473,7 @@ impl Robot {
                 kind: CollisionKind::Robot,
                 robot_id: Some(other.id),
                 wall_axis: PlaneAxis::Invalid,
+                position: other.next_position(),
                 vec2_direction: other.velocity(),
             }
         } else {

@@ -16,7 +16,7 @@ use operation_purge::data::{CenterGroup, GameData, GameDefinition, RobotGroup, T
 use operation_purge::ids::{AiRobotTypeId, GameDefId, RobotTypeId, TeamId};
 use operation_purge::math::intersect::PlaneAxis;
 use operation_purge::maze::Maze;
-use operation_purge::sim::ai::{bounce_turn_toward_robot, run_ai, wall_bounce_heading, AiState};
+use operation_purge::sim::ai::{bounce_turn_toward_robot, wall_bounce_heading, AiState};
 use operation_purge::sim::world::{Status, World};
 use glam::Vec2;
 use std::f32::consts::PI;
@@ -156,8 +156,7 @@ fn ai_drives_to_center_and_resupplies() {
     let dt = 1.0 / 60.0;
     let mut resupplied = false;
     for _ in 0..6000 {
-        run_ai(&mut world, dt);
-        world.frame(dt);
+        world.frame(dt, None);
         let r = world.robots.get(&id).unwrap();
         if r.proj_states.iter().any(|s| s.projectiles_left > 0.0) {
             resupplied = true;
@@ -205,8 +204,7 @@ fn ai_hunts_and_damages_enemy() {
     let dt = 1.0 / 60.0;
     let mut damaged = false;
     for _ in 0..6000 {
-        run_ai(&mut world, dt);
-        world.frame(dt);
+        world.frame(dt, None);
         let health: f32 = world.robots.values().map(|r| r.health).sum();
         // A robot took damage (projectile or crash) => combat happened.
         if world.robots.len() < 2 || health + 1e-3 < start_health {
@@ -244,8 +242,7 @@ fn two_robots_collide_and_enter_idle() {
     let dt = 1.0 / 60.0;
     let mut collided_seen = false;
     for _ in 0..4000 {
-        run_ai(&mut world, dt);
-        world.frame(dt);
+        world.frame(dt, None);
         if world.robots.values().any(|r| r.collided) {
             collided_seen = true;
             break;
@@ -255,11 +252,9 @@ fn two_robots_collide_and_enter_idle() {
         collided_seen,
         "the two robots never collided in a shared room"
     );
-    // After handling a collision, the FSM has a defined state for every AI
-    // robot (idle/targeting) — i.e. run_ai created a runtime for each.
-    assert_eq!(world.ai.len(), world.robots.len());
-    for a in world.ai.values() {
-        let _ = matches!(a.state, AiState::Idle | AiState::TargetingCenter | AiState::TargetingRobot);
+    for r in world.robots.values() {
+        let ai = r.ai.as_ref().expect("every spawned robot has an AI runtime");
+        assert!(matches!(ai.state, AiState::Idle | AiState::TargetingCenter | AiState::TargetingRobot));
     }
 }
 
@@ -303,8 +298,7 @@ fn run_ai_battle(seed: u64, cap: u32) -> (u32, Status, Vec<(u32, u32, u32, u32)>
         if status != Status::None || tick >= cap {
             return (tick, status, fingerprint(&world));
         }
-        run_ai(&mut world, dt);
-        world.frame(dt);
+        world.frame(dt, None);
         tick += 1;
     }
 }

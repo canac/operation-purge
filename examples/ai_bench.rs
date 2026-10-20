@@ -1,12 +1,11 @@
-//! Headless AI-vs-AI benchmark: times the AI pass separately from the sim
-//! and runs until one team is left (or the frame cap).
+//! Headless AI-vs-AI benchmark: times the sim frame (AI included) and runs
+//! until one team is left (or the frame cap).
 //!
 //! `cargo run --release --example ai_bench -- [maze] [game_def] [seed] [frames]`
 
 use operation_purge::data::gamedata;
 use operation_purge::ids::{GameDefId, TeamId};
 use operation_purge::maze::Maze;
-use operation_purge::sim::ai::run_ai;
 use operation_purge::sim::world::World;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -24,7 +23,7 @@ fn main() {
     let mut world = World::new(data, maze, GameDefId(game_def), TeamId(0), seed);
 
     let dt = 1.0 / 60.0;
-    let (mut ai_time, mut sim_time, mut worst) = (Duration::ZERO, Duration::ZERO, Duration::ZERO);
+    let (mut frame_time, mut worst) = (Duration::ZERO, Duration::ZERO);
     let (mut ran, mut stopped, mut robot_frames) = (0u32, 0u32, 0u32);
     while ran < frames {
         let mut teams: Vec<_> = world.robots.values().filter(|r| !r.is_dead()).map(|r| r.team).collect();
@@ -34,12 +33,10 @@ fn main() {
             break;
         }
         let t = Instant::now();
-        run_ai(&mut world, dt);
-        let a = t.elapsed();
-        world.frame(dt);
-        sim_time += t.elapsed() - a;
-        ai_time += a;
-        worst = worst.max(a);
+        world.frame(dt, None);
+        let elapsed = t.elapsed();
+        frame_time += elapsed;
+        worst = worst.max(elapsed);
         ran += 1;
         for r in world.robots.values().filter(|r| !r.is_dead()) {
             stopped += u32::from(r.speed.abs() < 0.1);
@@ -54,9 +51,8 @@ fn main() {
         stopped as f32 * 100.0 / robot_frames.max(1) as f32
     );
     println!(
-        "ai {:.3} ms/frame (worst {:.2} ms)  sim {:.3} ms/frame",
-        per(ai_time),
-        worst.as_secs_f64() * 1000.0,
-        per(sim_time)
+        "frame {:.3} ms (worst {:.2} ms)",
+        per(frame_time),
+        worst.as_secs_f64() * 1000.0
     );
 }

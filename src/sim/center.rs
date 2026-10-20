@@ -118,6 +118,12 @@ impl Center {
         point_rect(robot_rect.center, small_center)
     }
 
+    /// `cCenter::IsTransferReady` (`cCenter.cpp:94-97`): free, or already
+    /// transferring with `robot`.
+    pub fn is_transfer_ready(&self, robot: RobotId) -> bool {
+        !self.transferring || self.transfer_robot == Some(robot)
+    }
+
     /// PARITY: `cCenter::IsTransferPossible` (`cCenter.cpp:99-104`) — the
     /// robot must be stationary and within the boundaries.
     pub fn is_transfer_possible(&self, robot: &Robot) -> bool {

@@ -1,39 +1,28 @@
 //! `World`: owns every live simulation entity and runs the per-frame step
-//! in the original's exact order (design §2, §5.1; source-map §3.4
-//! `cOperationPurge`'s sim half), ported from `cOperationPurge.cpp`,
-//! `cBuilding.cpp` (collision helpers), `cRobot.cpp`, `cProjectile.cpp`,
-//! `cCenter.cpp`.
+//! in the original's exact order — `cOperationPurge`'s sim half, ported from
+//! `cOperationPurge.cpp`, `cRobot.cpp`, `cProjectile.cpp`, `cCenter.cpp`.
 //!
-//! Ownership/iteration-order contract (PARITY-critical, design §5.1):
+//! Ownership/iteration-order contract (PARITY-critical):
 //! `robots: BTreeMap<RobotId, Robot>` — ascending-ID iteration provably
 //! matches `std::map<tRobotID, cAIRobot*>` over the `cIDGenerator`
 //! sequence (pinned by `sim::idgen` tests); `projectiles: Vec<Projectile>`
 //! with in-order (never `swap_remove`) retain-style removal; `centers`
 //! iterated in ascending `CenterId` order (the Vec is sorted by id at
 //! setup) to match `std::map<tCenterID, cCenter*>`.
-//!
-//! All of the original's function-local statics (0.25s enemy-visible
-//! throttle, 0.03s cheat cooldown, 10-frame listener counter, LightData
-//! read-once) become fields here, reset in `start_game()` (design §5.1,
-//! source-map §8.11).
-//!
-//! M6 scope: the sim runs **headless and drivable without AI** — every
-//! robot is controlled by a per-frame [`RobotInput`] (design §5.2's
-//! possession path). AI decision-making (`CalcNewPositionAI`/`MoveAI`) is
-//! M7 (`sim::ai` stays a stub). Audio alarms/listener and particles are
-//! stubbed here (M9/M10 hooks).
 
-use crate::data::{GameData, RobotType};
+use crate::data::GameData;
 use crate::ids::{CenterId, EffectDefId, GameDefId, RobotId, TeamId};
 use crate::maze::building::{Building, WallDir};
 use crate::math::intersect::{rect_rect, Box3, Rect};
 use crate::rng::GameRng;
-use crate::sim::ai::AiRuntime;
+use crate::path::astar::AStar;
+use crate::path::RoomGraph;
+use crate::sim::ai::{AiCtx, AiOptions, AiRuntime};
 use crate::sim::center::{Center, CenterKind, Orientation};
 use crate::sim::idgen::IdGenerator;
 use crate::sim::particles::{Hole, HoleFifo, ParticleArena, ParticleEffect};
 use crate::sim::projectile::Projectile;
-use crate::sim::robot::{f_min, Collision2D, CollisionKind, Robot, Throttle};
+use crate::sim::robot::{f_min, Collision2D, CollisionKind, FireRequest, Robot, Throttle};
 use glam::{Vec2, Vec3};
 use std::collections::BTreeMap;
 
@@ -47,9 +36,8 @@ pub enum Status {
     Draw,
 }
 
-/// Per-robot control for one frame, replacing the possession path of
-/// `cOperationPurge::ExecuteCommands` (design §5.2). The sim is fully
-/// drivable through this without AI (M7 will synthesize these).
+/// Per-robot control for one frame: the possession path of
+/// `cOperationPurge::ExecuteCommands` (`cOperationPurge.cpp:1164-1197`).
 #[derive(Copy, Clone, Debug)]
 pub struct RobotInput {
     /// `SetMoveState` target (`cOperationPurge.cpp:1185-1192`).
@@ -84,8 +72,6 @@ pub struct World {
 
     pub building: Building,
     pub robots: BTreeMap<RobotId, Robot>,
-    /// Per-robot AI runtime (populated at M7; empty in M6).
-    pub ai: BTreeMap<RobotId, AiRuntime>,
     pub projectiles: Vec<Projectile>,
     /// Sorted ascending by `CenterId` (std::map iteration parity).
     pub centers: Vec<Center>,
@@ -96,8 +82,11 @@ pub struct World {
     pub id_gen: IdGenerator,
     pub center_id_gen: IdGenerator,
     pub rng: GameRng,
+    /// `m_PathFinder`, shared by every AI robot's searches.
+    astar: AStar,
 
-    /// Per-robot input for the current frame (`ExecuteCommands` twin).
+    /// Input for the robots [`frame`](Self::frame) drives by hand: the
+    /// possessed robot and any robot without an AI runtime.
     pub inputs: BTreeMap<RobotId, RobotInput>,
 
     /// `m_fGameTime`.
@@ -107,15 +96,7 @@ pub struct World {
     /// `m_vCenterPositions`, the pool of candidate center slots.
     pub center_positions: Vec<crate::sim::spawn::CenterPosition>,
 
-    // --- ex-function-local statics (reset in `start_game`, design §5.1) ---
-    pub enemy_visible_throttle: f32,
-    pub cheat_fire_cooldown: f32,
-    pub listener_frame_counter: u32,
-    /// M10 audio hook: the DS3D listener pose (observer/active-robot
-    /// position + heading), refreshed every 10th frame by the app on the
-    /// [`is_audio_listener_update_frame`](Self::is_audio_listener_update_frame)
-    /// boundary. Headless `World` has no observer of its own, so it holds
-    /// the neutral pose until the app pushes one via
+    /// The DS3D listener pose the app pushes via
     /// [`set_audio_listener`](Self::set_audio_listener). PARITY:
     /// `ListenerData` in `cOperationPurge.cpp:1276-1291`.
     pub audio_listener: crate::audio::spatial::AudioListener,
@@ -137,6 +118,11 @@ pub enum SoundKind {
 pub struct SoundEvent {
     pub kind: SoundKind,
     pub origin: Vec3,
+}
+
+/// Whether `frame` drives `robot` from [`World::inputs`] rather than its AI.
+fn is_hand_driven(robot: &Robot, possessed: Option<RobotId>) -> bool {
+    Some(robot.id) == possessed || robot.ai.is_none()
 }
 
 impl World {
@@ -164,7 +150,6 @@ impl World {
             active_team,
             building,
             robots: BTreeMap::new(),
-            ai: BTreeMap::new(),
             projectiles: Vec::new(),
             centers: Vec::new(),
             particles: ParticleArena::new(),
@@ -173,14 +158,12 @@ impl World {
             id_gen: IdGenerator::default(),
             center_id_gen: IdGenerator::default(),
             rng: GameRng::from_seed(seed),
+            astar: AStar::new(),
             inputs: BTreeMap::new(),
             game_time: 0.0,
             sound_events: Vec::new(),
             spawn_info: Vec::new(),
             center_positions: Vec::new(),
-            enemy_visible_throttle: 0.0,
-            cheat_fire_cooldown: 0.0,
-            listener_frame_counter: 0,
             audio_listener: crate::audio::spatial::AudioListener::default(),
         };
         world.start_game();
@@ -192,12 +175,9 @@ impl World {
     }
 
     /// PARITY: `cOperationPurge::StartGame` (`cOperationPurge.cpp:153-306`).
-    /// Resets every ex-static field and re-initializes the world for a
-    /// fresh game (design §5.1).
     pub fn start_game(&mut self) {
         self.game_time = 0.0;
         self.robots.clear();
-        self.ai.clear();
         self.projectiles.clear();
         self.centers.clear();
         self.effects.clear();
@@ -208,11 +188,6 @@ impl World {
         self.center_positions.clear();
         self.id_gen.reset();
         self.center_id_gen.reset();
-
-        // ex-statics
-        self.enemy_visible_throttle = 0.0;
-        self.cheat_fire_cooldown = 0.0;
-        self.listener_frame_counter = 0;
         self.audio_listener = crate::audio::spatial::AudioListener::default();
 
         // Centers (before robots, as in StartGame).
@@ -253,24 +228,21 @@ impl World {
         }
     }
 
-    // ================= per-frame step (design §5.1) =================
+    // ================= per-frame step =================
 
-    /// One simulation step, in the exact original order (design §5.1;
-    /// `ExecuteCommands` fire/control, then `FrameChange`/`MoveObjects`,
-    /// `cOperationPurge.cpp:609-775,1227-1240`): apply input -> spawn ->
-    /// two-phase movement (<=11 collision passes) -> projectile hits ->
-    /// remove destroyed robots -> center transfer -> (audio/listener stub).
-    /// The end check is exposed via [`status`](Self::status) rather than
-    /// popping a modal.
+    /// One simulation step in the original's order: `ExecuteCommands`'
+    /// possession path, then `MoveObjects`, `RemoveDestroyedRobots` and
+    /// `Transfer` (`cOperationPurge.cpp:609-775,1164-1197,1237-1240`).
     ///
-    /// `dt` is the game-time delta (the caller multiplies real dt by game
-    /// speed, `cOperationPurge.cpp:1235`).
-    pub fn frame(&mut self, dt: f32) {
+    /// `dt` is the game-time delta (real dt × game speed,
+    /// `cOperationPurge.cpp:1235`). `possessed` is the robot the player
+    /// drives through [`inputs`](Self::inputs); every other robot with an AI
+    /// runtime is driven by its AI, as in `MoveObjects`
+    /// (`cOperationPurge.cpp:631-637,660-666`).
+    pub fn frame(&mut self, dt: f32, possessed: Option<RobotId>) {
         crate::profile_scope!("MoveObjects");
-        // ExecuteCommands: fire + set throttle/rotate/elevate/accelerate.
-        self.apply_inputs();
+        self.apply_inputs(possessed);
 
-        // MoveObjects (`cOperationPurge.cpp:609`).
         self.game_time += dt;
 
         let n_teams = self.game_definition().teams.len();
@@ -278,23 +250,36 @@ impl World {
             self.spawn_robots(t, dt);
         }
 
-        // Phase 1: calculate new positions.
         let ids: Vec<RobotId> = self.robots.keys().copied().collect();
-        for id in &ids {
-            let r = self.robots.get_mut(id).unwrap();
-            if !r.is_dead() {
-                r.calc_new_position(dt);
+        {
+            crate::profile_scope!("Calculate new positions");
+            for &id in &ids {
+                let r = &self.robots[&id];
+                if r.is_dead() {
+                    continue;
+                }
+                if is_hand_driven(r, possessed) {
+                    self.robots.get_mut(&id).unwrap().calc_new_position(dt);
+                } else if let Some(req) = self.with_ai(id, |ai| ai.calc_new_position_ai(dt)) {
+                    self.add_projectile(req.projectile_type, Some(id), req.position, req.speed, req.theta, req.phi);
+                }
             }
         }
 
-        // Phase 2: <=11 collision passes, mutating each robot's collision_time.
         let collisions = self.test_collisions(&ids);
 
-        // Phase 3: commit moves + crash damage.
-        for (i, id) in ids.iter().enumerate() {
-            let r = self.robots.get_mut(id).unwrap();
-            if !r.is_dead() {
-                r.commit_move(collisions[i]);
+        {
+            crate::profile_scope!("Move robots");
+            for (&id, &collision) in ids.iter().zip(&collisions) {
+                let r = &self.robots[&id];
+                if r.is_dead() {
+                    continue;
+                }
+                if is_hand_driven(r, possessed) {
+                    self.robots.get_mut(&id).unwrap().commit_move(collision);
+                } else {
+                    self.with_ai(id, |ai| ai.move_ai(collision));
+                }
             }
         }
 
@@ -308,60 +293,65 @@ impl World {
             self.particles.move_all(dt, bounds);
         }
 
-        // Move projectiles + resolve hits (`cOperationPurge.cpp:702-736`).
-        // Projectile trail (travel) effects and per-hit collision effects
-        // are driven inside `step_projectiles` (M9).
         {
             crate::profile_scope!("Move projectiles");
             self.step_projectiles(dt);
         }
 
-        // M9: advance static burst effects (fire/collision/destroy) and drop
-        // finished ones. `mem::take` sidesteps the split borrow of
-        // `self.effects` + `self.particles`/`self.rng`.
         {
             crate::profile_scope!("Move particle effects");
+            // `mem::take` sidesteps the split borrow with `particles`/`rng`.
             let mut effects = std::mem::take(&mut self.effects);
             for eff in effects.iter_mut() {
                 eff.move_self(dt, &self.game_data, &mut self.particles, &mut self.rng);
             }
-            // PARITY: dynamic effects never self-prune (they never reach
-            // `is_finished`); only static burst effects are removed here.
             effects.retain(|e| !e.is_finished());
             self.effects = effects;
         }
 
-        // RemoveDestroyedRobots -> Transfer (`cOperationPurge.cpp:1239-1240`).
         self.remove_destroyed_robots();
         {
             crate::profile_scope!("Transfer");
             self.transfer(dt);
         }
-
-        // Audio alarms/listener (`cOperationPurge.cpp:1247-1349`) — M10 hook.
-        // PARITY: the original increments the 10-frame counter, then updates
-        // the DS3D listener when it wraps to 0. The counter (an ex-static) is
-        // kept live here; the app reads
-        // [`is_audio_listener_update_frame`](Self::is_audio_listener_update_frame)
-        // after each `frame()` to know when to refresh
-        // [`audio_listener`](Self::audio_listener) and to drive the alarm
-        // loops + per-event 3D sounds through `audio::SpatialSounds`.
-        self.listener_frame_counter = (self.listener_frame_counter + 1)
-            % crate::audio::spatial::LISTENER_UPDATE_INTERVAL_FRAMES;
     }
 
-    /// M10 audio hook: `true` on the frame boundary where the DS3D listener
-    /// must be refreshed (every 10th frame). PARITY: mirrors the original's
-    /// `iFrame = (iFrame + 1) % UpdateFrameDelay; if (iFrame == 0)` gate
-    /// (`cOperationPurge.cpp:1249-1253`) — call after [`frame`](Self::frame).
-    pub fn is_audio_listener_update_frame(&self) -> bool {
-        self.listener_frame_counter == 0
+    /// Runs `f` on robot `id`'s AI with every other robot visible. The robot
+    /// is taken out of the map for the duration so it can be borrowed
+    /// mutably alongside the rest of the world.
+    fn with_ai<R>(&mut self, id: RobotId, f: impl FnOnce(&mut AiCtx) -> R) -> R {
+        let mut robot = self.robots.remove(&id).expect("robot exists");
+        let mut ai = robot.ai.take().expect("AI-driven robot has an AI runtime");
+        let result = f(&mut AiCtx {
+            robot: &mut robot,
+            ai: &mut ai,
+            graph: RoomGraph::new(&self.building),
+            astar: &mut self.astar,
+            game_data: &self.game_data,
+            robots: &self.robots,
+            centers: &self.centers,
+            rng: &mut self.rng,
+        });
+        robot.ai = Some(ai);
+        self.robots.insert(id, robot);
+        result
     }
 
-    /// M10 audio hook: push the observer/active-robot pose the app resolved
-    /// for this update frame (position + heading), building the DS3D
-    /// listener exactly as `ExecuteCommands` did
-    /// (`cOperationPurge.cpp:1277-1285`).
+    /// PARITY: `cAIRobot::Reset` (`cAIRobot.cpp:56-61`) on robot `id`, which
+    /// the original calls whenever it hands a robot back to computer control
+    /// (`cOperationPurge.cpp:996,1155`). No-op for a missing robot.
+    pub fn reset_ai(&mut self, id: RobotId) {
+        let Some(robot) = self.robots.get_mut(&id) else {
+            return;
+        };
+        if let Some(mut ai) = robot.ai.take() {
+            ai.reset(robot, &mut self.rng);
+            robot.ai = Some(ai);
+        }
+    }
+
+    /// Pushes the observer/active-robot pose the app resolved for this
+    /// listener update (`cOperationPurge.cpp:1277-1285`).
     pub fn set_audio_listener(&mut self, position: Vec2, rotation: f32) {
         self.audio_listener = crate::audio::spatial::AudioListener::from_pose(position, rotation);
     }
@@ -371,29 +361,24 @@ impl World {
         self.inputs.insert(id, input);
     }
 
-    /// Clears all per-robot input (e.g. on focus loss, design §5.1/§5.2).
+    /// Clears all per-robot input.
     pub fn clear_inputs(&mut self) {
         self.inputs.clear();
     }
 
-    /// `ExecuteCommands` possession path (`cOperationPurge.cpp:1164-1197`):
-    /// fire first (uses the *current* heading), then set move state, then
-    /// apply rotate/elevate/accelerate deltas.
-    fn apply_inputs(&mut self) {
-        let ids: Vec<RobotId> = self.robots.keys().copied().collect();
-        let mut requests: Vec<(RobotId, crate::sim::robot::FireRequest)> = Vec::new();
-
-        for id in &ids {
-            let input = self.inputs.get(id).copied().unwrap_or_default();
-            let r = self.robots.get_mut(id).unwrap();
-            if r.is_dead() {
+    /// `ExecuteCommands` possession path (`cOperationPurge.cpp:1164-1197`)
+    /// for every hand-driven robot: fire first (uses the *current* heading),
+    /// then set move state, then apply rotate/elevate/accelerate deltas.
+    fn apply_inputs(&mut self, possessed: Option<RobotId>) {
+        let mut requests: Vec<(RobotId, FireRequest)> = Vec::new();
+        for (id, r) in self.robots.iter_mut() {
+            if r.is_dead() || !is_hand_driven(r, possessed) {
                 continue;
             }
+            let input = self.inputs.get(id).copied().unwrap_or_default();
             if input.fire {
-                if let Some(ty) = r.projectile_fire_type() {
-                    if let Some(req) = r.fire(ty, &mut self.rng) {
-                        requests.push((*id, req));
-                    }
+                if let Some(req) = r.projectile_fire_type().and_then(|ty| r.fire(ty, &mut self.rng)) {
+                    requests.push((*id, req));
                 }
             }
             r.set_move_state(input.throttle);
@@ -403,14 +388,7 @@ impl World {
         }
 
         for (owner, req) in requests {
-            self.add_projectile(
-                req.projectile_type,
-                Some(owner),
-                req.position,
-                req.speed,
-                req.theta,
-                req.phi,
-            );
+            self.add_projectile(req.projectile_type, Some(owner), req.position, req.speed, req.theta, req.phi);
         }
     }
 
@@ -525,6 +503,7 @@ impl World {
                 kind: CollisionKind::Wall,
                 robot_id: None,
                 wall_axis: ntr.plane.axis,
+                position: Vec2::ZERO,
                 vec2_direction: Vec2::ZERO,
             };
         }
@@ -845,7 +824,7 @@ impl World {
 
         info.next_spawn -= dt;
         while info.next_spawn <= 0.0 {
-            let ai_idx = group.ai_robot_type.expect("robot group has no AI type").get() as usize;
+            let ai_idx = group.ai_robot_type.expect("robot group AI type is validated on load").get() as usize;
             let min_wall_dist = self.game_data.ai_robot_types[ai_idx].min_wall_dist;
             let size = Vec2::new(min_wall_dist, min_wall_dist);
 
@@ -863,10 +842,12 @@ impl World {
                 self.get_rect_position(size)
             };
 
-            let robot_type = group.robot_type.expect("robot group has no robot type");
+            let robot_type = group.robot_type.expect("robot group robot type is validated on load");
             let id = RobotId(self.id_gen.next());
-            let options: RobotType = self.game_data.robot_types[robot_type.get() as usize].clone();
-            let robot = Robot::new(robot_type, TeamId(team as u32), id, position, &options);
+            let options = &self.game_data.robot_types[robot_type.get() as usize];
+            let mut robot = Robot::new(robot_type, TeamId(team as u32), id, position, options);
+            let ai_options = AiOptions::from(&self.game_data.ai_robot_types[ai_idx]);
+            robot.ai = Some(AiRuntime::new(&mut robot, ai_options, &mut self.rng));
             self.robots.insert(id, robot);
 
             info.next_spawn += self.rand_variance(group.spawn_delay, group.spawn_delay_variance);
@@ -981,7 +962,7 @@ impl World {
         let health_groups = self.game_definition().health_center_groups.clone();
 
         for group in &ammo_groups {
-            let idx = group.center_type.expect("center group has no type") as usize;
+            let idx = group.center_type.expect("center group type is validated on load") as usize;
             for _ in 0..group.count {
                 let ty = self.game_data.center_types.ammo[idx].clone();
                 let (position, orientation) = self.get_center_position(ty.size);
@@ -1002,7 +983,7 @@ impl World {
             }
         }
         for group in &energy_groups {
-            let idx = group.center_type.expect("center group has no type") as usize;
+            let idx = group.center_type.expect("center group type is validated on load") as usize;
             for _ in 0..group.count {
                 let ty = self.game_data.center_types.energy[idx].clone();
                 let (position, orientation) = self.get_center_position(ty.size);
@@ -1020,7 +1001,7 @@ impl World {
             }
         }
         for group in &health_groups {
-            let idx = group.center_type.expect("center group has no type") as usize;
+            let idx = group.center_type.expect("center group type is validated on load") as usize;
             for _ in 0..group.count {
                 let ty = self.game_data.center_types.health[idx].clone();
                 let (position, orientation) = self.get_center_position(ty.size);
