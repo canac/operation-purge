@@ -1,12 +1,12 @@
 //! Deserialize helpers for `GameData.toml` scalar types that don't map
-//! directly onto TOML's native scalars (design §4.1).
+//! directly onto TOML's native scalars.
 //!
 //! Every conversion here runs **once, at deserialize time**: colors land
 //! as `Rgba` f32 directly (no `COLORREF`/`D3DCOLOR` byte order ever exists
 //! in this port's memory) and angle fields land in radians. This folds
 //! the original's separate `TransformGameData` mutate-in-place pass
 //! (`cOperationPurge.cpp:2600-2691`) into parsing, so there is no second
-//! conversion step and therefore no double-conversion trap (design §4.1).
+//! conversion step and therefore no double-conversion trap.
 
 use crate::math::Rgba;
 use serde::de::Error as DeError;
@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer};
 /// `Color = "0xRRGGBB"` → opaque `Rgba` (alpha forced to `1.0`).
 ///
 /// PARITY: alpha is forced opaque here for every `[colors]` field except
-/// the ones design §4.1 lists as alpha-keeping (`Background2DColor`, all
+/// the alpha-keeping ones (`Background2DColor`, all
 /// three center-type color lists, particle stage colors) — those use
 /// [`deserialize_alpha_color`] instead.
 pub fn deserialize_color<'de, D>(deserializer: D) -> Result<Rgba, D::Error>
@@ -28,7 +28,7 @@ where
 }
 
 /// `AlphaColor = "0xAARRGGBB"` (**alpha first**, matching the original
-/// lexeme, libs-map §2.4) → `Rgba` with alpha kept.
+/// lexeme) → `Rgba` with alpha kept.
 pub fn deserialize_alpha_color<'de, D>(deserializer: D) -> Result<Rgba, D::Error>
 where
     D: Deserializer<'de>,
@@ -73,9 +73,9 @@ fn parse_hex_color(s: &str, with_alpha: bool) -> Result<(f32, f32, f32, f32), St
 
 /// `Ref` = the string `"None"` → `None`, else a 0-based integer index
 /// newtype. Bounds-validation against the referenced vector's length
-/// happens after the *entire* file loads (GUARD, design §4.1) — the
+/// happens after the *entire* file loads (GUARD) — the
 /// original never validated at all and would index out of bounds at
-/// spawn time (libs-map §2.2).
+/// spawn time.
 pub fn deserialize_ref<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -97,7 +97,7 @@ where
 }
 
 /// Degrees → radians, applied at deserialize time for every angle field
-/// design §4.1 lists as degree-authored (`robot_type.rotate_rate`,
+/// authored in degrees (`robot_type.rotate_rate`,
 /// `projectile.accuracy`, particle rotation fields, emitter theta/phi
 /// ranges).
 pub fn deserialize_degrees_as_radians<'de, D>(deserializer: D) -> Result<f32, D::Error>

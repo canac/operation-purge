@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-use crate::input::keys::{Key, KEY_TABLE};
+use crate::input::keys::Key;
 
 /// A key-ish input target: keyboard key or mouse button.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -67,9 +67,8 @@ pub fn parse_target(name: &str) -> Result<Target, String> {
     if let Some((_, code)) = extra.iter().find(|(n, _)| *n == name) {
         return Ok(Target::Key(*code));
     }
-    KEY_TABLE
-        .iter()
-        .map(|(k, _)| *k)
+    Key::ALL
+        .into_iter()
         .find(|k| format!("{k:?}") == name)
         .and_then(Key::key_code)
         .map(Target::Key)

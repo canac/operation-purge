@@ -1,5 +1,5 @@
 //! Hierarchical scope profiler, replacing `Profile.h`/`cProfileManager`
-//! (libs-map §1.8, design §1.4.8, §5.3).
+//!.
 //!
 //! Shipped, user-visible feature (P/[/] keybindings toggle
 //! running/visible/interaction; on-screen tree pane; 250 ms refresh; exit
@@ -15,7 +15,7 @@
 //! for read-out. The C++ used raw parent/child/sibling pointers; here the
 //! tree is an index arena (`Vec<ProfileNode>`), which is the borrow-checker-
 //! clean equivalent — node identity by `&'static str` value replaces the
-//! original's static-string *pointer* comparison (source-map §3.7), a
+//! original's static-string *pointer* comparison, a
 //! correct substitute for the compiled-in scope names.
 
 use std::cell::RefCell;
@@ -52,7 +52,7 @@ impl ProfileNode {
 }
 
 /// Global profiler state; the app owns one instance (replacing the
-/// original's `g_ProfileManager` singleton, libs-map §1.8). Node index 0 is
+/// original's `g_ProfileManager` singleton). Node index 0 is
 /// always the root.
 pub struct ProfileManager {
     pub enabled: bool,
@@ -76,7 +76,7 @@ impl ProfileManager {
     }
 
     /// `cProfileManager::SetProfilingEnabled` (toggled by the profiler-running
-    /// keybinding, design §5.3).
+    /// keybinding).
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
@@ -309,7 +309,7 @@ impl<'a> ProfileIterator<'a> {
 thread_local! {
     /// Process-wide manager the `profile_scope!` macro records into. The game
     /// loop is single-threaded, so a `thread_local` is the faithful analog of
-    /// the original `g_ProfileManager` global (libs-map §1.8). Enabled state
+    /// the original `g_ProfileManager` global. Enabled state
     /// starts `false` — the "profiler running" keybinding turns it on.
     static PROFILER: RefCell<ProfileManager> = RefCell::new(ProfileManager::new(false));
 }
@@ -336,7 +336,7 @@ pub fn dump() -> String {
 
 /// The exit-dump destination (`Profile output.txt`). The original wrote it
 /// to the install dir; the port moves it to `data_local_dir` alongside
-/// `Logfile.txt` (design §4.6, broken-under-UAC deviation).
+/// `Logfile.txt` (broken-under-UAC deviation).
 pub fn exit_dump_path() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
@@ -345,7 +345,7 @@ pub fn exit_dump_path() -> std::path::PathBuf {
 }
 
 /// Write the global profile tree to `Profile output.txt` on exit
-/// (PARITY: `cMainWindow` dumped the profile on shutdown, design §5.3, §1.4.8).
+/// (PARITY: `cMainWindow` dumped the profile on shutdown).
 /// Only writes when the profiler has actually recorded something (an empty
 /// run leaves no file, mirroring the lazy `Logfile.txt`).
 pub fn write_exit_dump() -> std::io::Result<()> {
@@ -361,7 +361,7 @@ pub fn write_exit_dump() -> std::io::Result<()> {
 }
 
 /// RAII scope guard — the Rust analog of the `PROFILE("name")` macro used
-/// at ~25 sites in `cOperationPurge.cpp` (libs-map §1.8). Enters a scope in
+/// at ~25 sites in `cOperationPurge.cpp`. Enters a scope in
 /// the global [`PROFILER`] on construction and closes it on drop.
 pub struct ProfileScope {
     _priv: (),

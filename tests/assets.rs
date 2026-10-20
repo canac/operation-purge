@@ -1,4 +1,4 @@
-//! Asset pipeline sanity checks (design §4.6 item 2).
+//! Asset pipeline sanity checks.
 //!
 //! Every texture and sound the game uses was recovered from
 //! `OperationPurge.msi` and normalized offline to one standard format
@@ -15,8 +15,7 @@ fn assets_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("assets")
 }
 
-/// Regression guard (the bug the M1 conversion left behind, now that names are
-/// compiled in): every sound and texture in the registry must exist on disk,
+/// Every sound and texture in the registry must exist on disk,
 /// or the game logs "could not preload ..." / falls back to a white texture.
 #[test]
 fn every_registered_asset_exists_on_disk() {

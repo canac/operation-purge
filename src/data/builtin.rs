@@ -1,4 +1,4 @@
-//! `Objects.txt` / `LightData.txt` → compiled-in constants (design §4.3).
+//! `Objects.txt` / `LightData.txt` → compiled-in constants.
 //!
 //! User decision: these two tiny fixed-value text files are hardcoded as
 //! Rust `const`s instead of being read at runtime — no parser, no file,
@@ -13,7 +13,7 @@
 /// Robot/projectile procedural-geometry dimensions.
 ///
 /// PARITY: verified 11-value record, `cOperationPurge.cpp:2153-2199` (+
-/// its commented-out defaults). Consumed by `render::robot3d` at M5.
+/// its commented-out defaults). Consumed by `render::robot3d`.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Robot3DDimensions {
     pub body_resolution: u32,
@@ -68,8 +68,6 @@ pub const LIGHT_DATA: LightAttenuation = LightAttenuation {
 mod tests {
     use super::*;
 
-    /// Pins the exact compiled-in values so an accidental edit is caught
-    /// (design §4.3).
     #[test]
     fn objects_values_are_pinned() {
         // Verified against the recovered Objects.txt.

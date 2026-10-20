@@ -1,6 +1,6 @@
-//! `GameData` struct tree — the field inventory of the original `tGameData`
-//! (libs-map §2.2, §2.4), expressed as named `serde` tables in
-//! `GameData.toml` instead of the original's positional XML (design §4.1).
+//! `GameData` struct tree — the field inventory of the original `tGameData`,
+//! expressed as named `serde` tables in `GameData.toml` instead of the
+//! original's positional XML.
 //!
 //! Every value here is in **final form**: colors are `Rgba` f32 (never a
 //! packed `COLORREF`/`D3DCOLOR`), angles are radians (never degrees), and
@@ -20,11 +20,11 @@ use crate::ids::{
 use crate::math::Rgba;
 use serde::Deserialize;
 
-/// `[colors]` — `tColorsOptions`, 8 colors total (libs-map §2.2).
+/// `[colors]` — `tColorsOptions`, 8 colors total.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColorsOptions {
-    /// Alpha kept (design §4.1 keep-alpha list).
+    /// Alpha kept.
     #[serde(deserialize_with = "values::deserialize_alpha_color")]
     pub background_2d: Rgba,
     #[serde(deserialize_with = "values::deserialize_color")]
@@ -43,8 +43,8 @@ pub struct ColorsOptions {
     pub tread_3d: Rgba,
 }
 
-/// `[building]` — `tBuildingOptions` (libs-map §2.2, §5.7 for shipped
-/// defaults: wall width 1.0, room size 10.0, ceiling height 5.0).
+/// `[building]` — `tBuildingOptions` (shipped defaults: wall width 1.0,
+/// room size 10.0, ceiling height 5.0).
 ///
 /// The wall/floor/ceiling texture *filenames* are not stored here — they are
 /// compiled in ([`assets::names`], user decision). Only the per-surface UV
@@ -86,7 +86,7 @@ pub struct UiOptions {
     pub move_observer_speed3_rate: f32,
 }
 
-/// `tRobotGroup` (libs-map §2.2).
+/// `tRobotGroup`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RobotGroup {
@@ -102,7 +102,7 @@ pub struct RobotGroup {
     pub spawn_from_point: bool,
 }
 
-/// `tCenterGroup { iCenterType, nCenters }` (libs-map §2.2). `center_type`
+/// `tCenterGroup { iCenterType, nCenters }`. `center_type`
 /// indexes whichever of `ammo`/`energy`/`health` the surrounding
 /// `GameDefinition` list refers to (the original's `iCenterType` is a
 /// plain `UINT`, not one of the port's `ids::*` newtypes).
@@ -114,7 +114,7 @@ pub struct CenterGroup {
     pub count: u32,
 }
 
-/// `tTeamDefinition` (libs-map §2.2).
+/// `tTeamDefinition`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TeamDefinition {
@@ -125,7 +125,7 @@ pub struct TeamDefinition {
     pub robot_groups: Vec<RobotGroup>,
 }
 
-/// `tGameDefinition` (libs-map §2.2). One `[[game_definitions]]` table per
+/// `tGameDefinition`. One `[[game_definitions]]` table per
 /// selectable "game" in the New Game screen's combo box.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -142,8 +142,8 @@ pub struct GameDefinition {
 }
 
 /// `tProjectileData { iProjectileType, nProjectiles, fFireRate,
-/// angAccuracy }` (libs-map §2.2) — one magazine entry in a robot type's
-/// fire/restock priority list (last-matching-entry selection, design §1.3).
+/// angAccuracy }` — one magazine entry in a robot type's
+/// fire/restock priority list (last-matching-entry selection).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectileData {
@@ -155,7 +155,7 @@ pub struct ProjectileData {
     pub accuracy: f32,
 }
 
-/// `[[robot_types]]` — `tRobotType` (libs-map §2.2).
+/// `[[robot_types]]` — `tRobotType`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RobotType {
@@ -165,7 +165,7 @@ pub struct RobotType {
     pub friction_decel: f32,
     pub max_speed: f32,
     /// PARITY: unused for turning (rate-limit code commented out,
-    /// `cRobot.cpp:117-120`, source-map §1) but still loaded/stored.
+    /// `cRobot.cpp:117-120`) but still loaded/stored.
     #[serde(deserialize_with = "values::deserialize_degrees_as_radians")]
     pub rotate_rate: f32,
     pub max_visible_dist: f32,
@@ -179,7 +179,7 @@ pub struct RobotType {
     pub projectile_data: Vec<ProjectileData>,
 }
 
-/// `[[ai_robot_types]]` — `tAIRobotType` (libs-map §2.2).
+/// `[[ai_robot_types]]` — `tAIRobotType`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AiRobotType {
@@ -198,7 +198,7 @@ pub struct AiRobotType {
     pub critical_health: f32,
 }
 
-/// `[[projectile_types]]` — `tProjectileType` (libs-map §2.2).
+/// `[[projectile_types]]` — `tProjectileType`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectileType {
@@ -217,10 +217,10 @@ pub struct ProjectileType {
     pub collision_effect: Option<EffectDefId>,
 }
 
-/// `tTransferRate { iProjectileType, fTransferRate }` (libs-map §2.2).
+/// `tTransferRate { iProjectileType, fTransferRate }`.
 /// PARITY: an ammo center with no entry for a fired projectile type has
 /// rate `0.0` ⇒ `dt / 0.0 = +inf` ammo — defined IEEE division, preserved
-/// as-is with no guard (design §1.3).
+/// as-is with no guard.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransferRate {
@@ -261,7 +261,7 @@ pub struct HealthCenterType {
 }
 
 /// `[center_types]` — the `CenterTypes { vAmmo/vEnergy/vHealthCenterTypes }`
-/// grouping (libs-map §2.2).
+/// grouping.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CenterTypes {
@@ -273,7 +273,7 @@ pub struct CenterTypes {
     pub health: Vec<HealthCenterType>,
 }
 
-/// `tParticleStage { Color, fSize, fTime }` (libs-map §2.2) — a keyframe;
+/// `tParticleStage { Color, fSize, fTime }` — a keyframe;
 /// `fTime` is a 0..1 fraction of the particle's lifetime.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -284,7 +284,7 @@ pub struct ParticleStage {
     pub time: f32,
 }
 
-/// `[[particle_types]]` — `tParticleType` (libs-map §2.2).
+/// `[[particle_types]]` — `tParticleType`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ParticleType {
@@ -306,7 +306,7 @@ pub struct ParticleType {
     pub rotation_rate_variance: f32,
 }
 
-/// `[[particle_emitter_types]]` — `tParticleEmitterType` (libs-map §2.2).
+/// `[[particle_emitter_types]]` — `tParticleEmitterType`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ParticleEmitterType {
@@ -315,8 +315,7 @@ pub struct ParticleEmitterType {
     pub lifetime_variance: f32,
     pub emit_by_distance: bool,
     /// PARITY: a *delay* between emits (seconds, or distance units when
-    /// `emit_by_distance`), not a frequency (design §5.6 note; source-map
-    /// §3.6).
+    /// `emit_by_distance`), not a frequency.
     pub emit_rate: f32,
     pub emit_rate_variance: f32,
     pub emit_relative: bool,
@@ -324,7 +323,7 @@ pub struct ParticleEmitterType {
     pub emit_theta_min: f32,
     #[serde(deserialize_with = "values::deserialize_degrees_as_radians")]
     pub emit_theta_max: f32,
-    /// May be negative (libs-map §2.4).
+    /// May be negative.
     #[serde(deserialize_with = "values::deserialize_degrees_as_radians")]
     pub emit_phi_min: f32,
     #[serde(deserialize_with = "values::deserialize_degrees_as_radians")]
@@ -333,8 +332,7 @@ pub struct ParticleEmitterType {
     pub emit_velocity_variance: f32,
 }
 
-/// `tParticleEffectComponent { iParticleType, iParticleEmitterType }`
-/// (libs-map §2.2).
+/// `tParticleEffectComponent { iParticleType, iParticleEmitterType }`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ParticleEffectComponent {
@@ -344,8 +342,8 @@ pub struct ParticleEffectComponent {
     pub particle_emitter_type: Option<EmitterTypeId>,
 }
 
-/// `[[particle_effect_definitions]]` — `tParticleEffectDefinition`
-/// (libs-map §2.2). Referenced by index from robot/projectile types via
+/// `[[particle_effect_definitions]]` — `tParticleEffectDefinition`.
+/// Referenced by index from robot/projectile types via
 /// `EffectDefId`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -356,9 +354,9 @@ pub struct ParticleEffectDefinition {
 }
 
 /// The full `GameData.toml` document — same field inventory as the
-/// original `tGameData` (libs-map §2.2), expressed as named tables.
+/// original `tGameData`, expressed as named tables.
 ///
-/// NOT carried over (design §4.1): `tGameData::vParticleEffectComponents`
+/// NOT carried over: `tGameData::vParticleEffectComponents`
 /// (dead member — components live inside each effect definition, not in a
 /// separate top-level list).
 #[derive(Debug, Clone, Deserialize)]

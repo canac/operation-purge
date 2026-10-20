@@ -1,10 +1,9 @@
 //! Event-accumulated per-frame input snapshot, replacing `cDirectInput`'s
-//! per-frame polling (design §2, §5.2).
+//! per-frame polling.
 //!
 //! PARITY: `m_bFirstQuery` phantom-edge bug — the first frame's "previous"
 //! snapshot equals its "current" snapshot, so no spurious press/release
-//! edges fire on frame one (design §1.3 FIX ledger; this is filed as a FIX
-//! because it has no feel impact, only observable-on-frame-1 correctness).
+//! edges fire on frame one (a FIX: no feel impact, only frame-1 correctness).
 //! Focus loss clears all pending/current state (DISCL_FOREGROUND parity).
 
 pub mod commands;
@@ -16,10 +15,10 @@ use keys::{Key, KEY_COUNT};
 #[derive(Clone)]
 pub struct InputState {
     pub down: [bool; KEY_COUNT],
-    /// Accumulated raw mouse deltas since the last frame (design §5.2:
-    /// `DeviceEvent::MouseMotion` dx/dy accumulate across the frame).
+    /// Accumulated raw mouse deltas since the last frame
+    /// (`DeviceEvent::MouseMotion` dx/dy accumulate across the frame).
     pub mouse_delta: (f64, f64),
-    /// Accumulated wheel detents (`LineDelta * 120` emulation, design §5.2).
+    /// Accumulated wheel detents (`LineDelta * 120` emulation).
     pub wheel_delta: f32,
 }
 
@@ -67,7 +66,7 @@ impl Input {
     /// Called from the winit event handler as key/button OS events arrive:
     /// sets or clears the pending `down` bit for `key`. PARITY: mirrors
     /// `cDirectInput`'s per-device-poll `abKeyDown[]` array, but driven by
-    /// events instead of a poll (design §5.2). Idempotent — winit key
+    /// events instead of a poll. Idempotent — winit key
     /// auto-repeat resending `Pressed` while already down is a no-op, so no
     /// phantom edge appears at the next `begin_frame`.
     pub fn on_key_event(&mut self, key: Key, is_down: bool) {
@@ -76,7 +75,7 @@ impl Input {
 
     /// Accumulate a raw relative mouse motion (`DeviceEvent::MouseMotion`
     /// dx/dy) into the pending frame; deltas sum across all events in a
-    /// frame and reset at `begin_frame` (design §5.2).
+    /// frame and reset at `begin_frame`.
     pub fn on_mouse_motion(&mut self, dx: f64, dy: f64) {
         self.pending.mouse_delta.0 += dx;
         self.pending.mouse_delta.1 += dy;
@@ -86,7 +85,7 @@ impl Input {
     /// detents. PARITY: winit `MouseScrollDelta::LineDelta(_, y)` maps one
     /// line to one detent (the original polled `lMouseMoveZ` in `WHEEL_DELTA`
     /// = 120 units; feel code divides by `fAccelerateRate`, so detents — not
-    /// raw 120s — are the natural unit here, design §5.2). Trackpad
+    /// raw 120s — are the natural unit here). Trackpad
     /// `PixelDelta` is normalized by the caller.
     pub fn on_wheel(&mut self, detents: f32) {
         self.pending.wheel_delta += detents;
@@ -95,7 +94,7 @@ impl Input {
     /// Snapshots `pending` into `current` (rotating the old `current` into
     /// `previous`) at frame start. FIX: on the very first call, `previous`
     /// is set equal to `current` rather than kept at its all-false default,
-    /// suppressing phantom edges (design §1.3).
+    /// suppressing phantom edges.
     pub fn begin_frame(&mut self) {
         self.previous = self.current.clone();
         self.current = self.pending.clone();
@@ -107,7 +106,7 @@ impl Input {
         self.pending.wheel_delta = 0.0;
     }
 
-    /// Focus loss clears all state — DISCL_FOREGROUND parity (design §5.2).
+    /// Focus loss clears all state — DISCL_FOREGROUND parity.
     pub fn clear_on_focus_loss(&mut self) {
         self.pending = InputState::default();
         self.current = InputState::default();
@@ -126,17 +125,17 @@ impl Input {
         self.current.is_down(key)
     }
 
-    /// Accumulated raw mouse delta for the current frame (design §5.2).
+    /// Accumulated raw mouse delta for the current frame.
     pub fn mouse_delta(&self) -> (f64, f64) {
         self.current.mouse_delta
     }
 
-    /// Accumulated wheel detents for the current frame (design §5.2).
+    /// Accumulated wheel detents for the current frame.
     pub fn wheel_delta(&self) -> f32 {
         self.current.wheel_delta
     }
 
-    /// Whether *any* control-side key is down (either-side, design §5.2 /
+    /// Whether *any* control-side key is down (either-side,
     /// `cOperationPurge.cpp:3129`).
     pub fn control_down(&self) -> bool {
         self.is_down(Key::ControlLeft) || self.is_down(Key::ControlRight)
