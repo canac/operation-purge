@@ -1,7 +1,6 @@
-//! M8 playable-integration tests (design §7 M8): state-machine transitions
-//! (2D ↔ 3D ↔ possess ↔ death-forces-2D), live HUD assembly, the game-speed
-//! ramp/pause math, and `execute_commands` mapping bound keys → actions. All
-//! CPU-side; no window is opened.
+//! Game integration tests: state-machine transitions (2D ↔ 3D ↔ possess ↔
+//! death-forces-2D), live HUD assembly, the game-speed ramp/pause math, and
+//! `execute_commands` mapping bound keys → actions. No window is opened.
 
 use std::path::Path;
 
@@ -325,6 +324,51 @@ fn esc_opens_end_game_confirm_and_no_resumes() {
 }
 
 #[test]
+fn esc_held_through_the_modal_does_not_reopen_it() {
+    let mut g = game();
+    play3d(&mut g);
+    let mut input = press_edge(Command::EndGame);
+    g.execute_commands(&input, 0.016);
+    g.resolve_confirm(ConfirmChoice::No);
+    input.begin_frame();
+    g.execute_commands(&input, 0.016);
+    assert!(!g.in_confirm());
+}
+
+#[test]
+fn per_type_fire_fires_that_type_not_the_last_ready_one() {
+    let mut g = game();
+    let id = *g
+        .world
+        .robots
+        .iter()
+        .find(|(_, r)| r.proj_states.len() >= 2)
+        .expect("a robot carrying two projectile types")
+        .0;
+    g.select_robot(id);
+    g.observer_type = ObserverType::Robot;
+    g.set_observer();
+    g.game_speed = 1.0;
+    let ammo = |g: &Game| -> Vec<f32> {
+        g.world.robots[&id].proj_states.iter().map(|s| s.projectiles_left).collect()
+    };
+    let before = ammo(&g);
+    let first = g.world.robots[&id].proj_states[0].projectile_type.get() as usize;
+    let fire = operation_purge::input::commands::fire_binding(first).unwrap();
+
+    let mut input = Input::new();
+    input.begin_frame();
+    hold_command(&mut input, fire);
+    input.begin_frame();
+    g.execute_commands(&input, 0.016);
+    g.advance(0.016);
+
+    let after = ammo(&g);
+    assert!(after[0] < before[0], "{before:?} -> {after:?}");
+    assert_eq!(after[1], before[1]);
+}
+
+#[test]
 fn esc_end_game_yes_requests_new_game() {
     let mut g = game();
     play3d(&mut g);
@@ -372,7 +416,7 @@ fn game_over_modal_pops_in_3d_and_keep_watching_resumes() {
             r.health = 0.0;
         }
     }
-    assert_eq!(g.status(), operation_purge::sim::world::Status::Won);
+    assert_eq!(g.world.status(), operation_purge::sim::world::Status::Won);
 
     // The game-over check runs at the end of the sim step (`FrameChange`).
     g.advance(0.016);
@@ -427,7 +471,7 @@ fn game_over_check_does_not_fire_in_2d_mode() {
             r.health = 0.0;
         }
     }
-    assert_eq!(g.status(), operation_purge::sim::world::Status::Won);
+    assert_eq!(g.world.status(), operation_purge::sim::world::Status::Won);
     g.execute_commands(&Input::new(), 0.016);
     g.advance(0.016);
     // PARITY: FrameChange returns before the game-over check in 2D (`:1229`).

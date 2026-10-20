@@ -599,14 +599,14 @@ impl AppRunner {
                     game.advance(dt);
                 }
                 // Profiler running toggle (P): thread-local enable.
-                if game.command_just_pressed(Command::ToggleProfilerRunning, &self.input) {
+                if crate::input::commands::binding(Command::ToggleProfilerRunning).just_pressed(&self.input) {
                     let now_on = crate::profiler::with_profiler(|p| {
                         p.set_enabled(!p.enabled());
                         p.enabled()
                     });
                     eprintln!("profiler running: {now_on}");
                 }
-                if game.command_just_pressed(Command::ToggleProfilerVisible, &self.input) {
+                if crate::input::commands::binding(Command::ToggleProfilerVisible).just_pressed(&self.input) {
                     self.profiler_visible = !self.profiler_visible;
                 }
 
@@ -967,6 +967,7 @@ pub fn run(config: Config, opts: RunOptions) -> Result<(), winit::error::EventLo
 struct GameAudio {
     sounds: crate::audio::SpatialSounds<crate::audio::KiraBackend>,
     listener_frame: u32,
+    listener: crate::audio::spatial::AudioListener,
     clips: std::collections::HashMap<&'static str, crate::audio::ClipId>,
     /// One-shots started since launch (E2E state dump).
     played: u64,
@@ -1008,6 +1009,7 @@ impl GameAudio {
         Some(Self {
             sounds,
             listener_frame: 0,
+            listener: Default::default(),
             clips,
             played: 0,
         })
@@ -1019,10 +1021,10 @@ impl GameAudio {
             (self.listener_frame + 1) % crate::audio::spatial::LISTENER_UPDATE_INTERVAL_FRAMES;
         if self.listener_frame == 0 {
             let (pos, rot) = game_listener_pose(game);
-            game.world.set_audio_listener(pos, rot);
+            self.listener = crate::audio::spatial::AudioListener::from_pose(pos, rot);
         }
 
-        let listener = game.world.audio_listener;
+        let listener = self.listener;
         let live = game_live_listener(game);
         for ev in std::mem::take(&mut game.world.sound_events) {
             use crate::data::assets::names;

@@ -11,7 +11,7 @@
 //! setup) to match `std::map<tCenterID, cCenter*>`.
 
 use crate::data::GameData;
-use crate::ids::{CenterId, EffectDefId, GameDefId, RobotId, TeamId};
+use crate::ids::{CenterId, EffectDefId, GameDefId, ProjectileTypeId, RobotId, TeamId};
 use crate::maze::building::{Building, WallDir};
 use crate::math::f_min;
 use crate::math::intersect::{rect_rect, Box3, Rect};
@@ -49,8 +49,10 @@ pub struct RobotInput {
     pub elevate: f32,
     /// Desired-speed delta this frame (`Accelerate`).
     pub accel: f32,
-    /// Fire the last ready-to-fire projectile type (`Fire()`).
+    /// Fire the last ready-to-fire projectile type (`Fire ()`).
     pub fire: bool,
+    /// Bit `i` set: `Fire (i)` for projectile type `i`, after `Fire ()`.
+    pub fire_types: u32,
 }
 
 impl Default for RobotInput {
@@ -62,6 +64,7 @@ impl Default for RobotInput {
             elevate: 0.0,
             accel: 0.0,
             fire: false,
+            fire_types: 0,
         }
     }
 }
@@ -97,10 +100,6 @@ pub struct World {
     /// `m_vCenterPositions`, the pool of candidate center slots.
     pub center_positions: Vec<crate::sim::spawn::CenterPosition>,
 
-    /// The DS3D listener pose the app pushes via
-    /// [`set_audio_listener`](Self::set_audio_listener). PARITY:
-    /// `ListenerData` in `cOperationPurge.cpp:1276-1291`.
-    pub audio_listener: crate::audio::spatial::AudioListener,
     /// One-shot 3D sounds raised this frame (`Play3DSound` call sites);
     /// drained by the app's audio pass.
     pub sound_events: Vec<SoundEvent>,
@@ -165,7 +164,6 @@ impl World {
             sound_events: Vec::new(),
             spawn_info: Vec::new(),
             center_positions: Vec::new(),
-            audio_listener: crate::audio::spatial::AudioListener::default(),
         };
         world.start_game();
         world
@@ -189,7 +187,6 @@ impl World {
         self.center_positions.clear();
         self.id_gen.reset();
         self.center_id_gen.reset();
-        self.audio_listener = crate::audio::spatial::AudioListener::default();
 
         // Centers (before robots, as in StartGame).
         self.initialize_center_positions();
@@ -239,8 +236,9 @@ impl World {
     /// `cOperationPurge.cpp:1235`). `possessed` is the robot the player
     /// drives through [`inputs`](Self::inputs); every other robot with an AI
     /// runtime is driven by its AI, as in `MoveObjects`
-    /// (`cOperationPurge.cpp:631-637,660-666`).
-    pub fn frame(&mut self, dt: f32, possessed: Option<RobotId>) {
+    /// (`cOperationPurge.cpp:631-637,660-666`). `active` is kept in the map
+    /// even when dead, as `RemoveDestroyedRobots` spares the active robot.
+    pub fn frame(&mut self, dt: f32, possessed: Option<RobotId>, active: Option<RobotId>) {
         crate::profile_scope!("MoveObjects");
         self.apply_inputs(possessed);
 
@@ -310,7 +308,7 @@ impl World {
             self.effects = effects;
         }
 
-        self.remove_destroyed_robots();
+        self.remove_destroyed_robots(active);
         {
             crate::profile_scope!("Transfer");
             self.transfer(dt);
@@ -351,12 +349,6 @@ impl World {
         }
     }
 
-    /// Pushes the observer/active-robot pose the app resolved for this
-    /// listener update (`cOperationPurge.cpp:1277-1285`).
-    pub fn set_audio_listener(&mut self, position: Vec2, rotation: f32) {
-        self.audio_listener = crate::audio::spatial::AudioListener::from_pose(position, rotation);
-    }
-
     /// Sets (or replaces) a robot's input for the next frame.
     pub fn set_input(&mut self, id: RobotId, input: RobotInput) {
         self.inputs.insert(id, input);
@@ -379,6 +371,17 @@ impl World {
             let input = self.inputs.get(id).copied().unwrap_or_default();
             if input.fire {
                 if let Some(req) = r.projectile_fire_type().and_then(|ty| r.fire(ty, &mut self.rng)) {
+                    requests.push(req);
+                }
+            }
+            let held: Vec<ProjectileTypeId> = r
+                .proj_states
+                .iter()
+                .map(|s| s.projectile_type)
+                .filter(|ty| input.fire_types.checked_shr(ty.get()).is_some_and(|m| m & 1 != 0))
+                .collect();
+            for ty in held {
+                if let Some(req) = r.fire(ty, &mut self.rng) {
                     requests.push(req);
                 }
             }
@@ -593,16 +596,14 @@ impl World {
     }
 
     /// PARITY: `cOperationPurge::RemoveDestroyedRobots`
-    /// (`cOperationPurge.cpp:778-800`). Headless has no active robot to
-    /// protect, so every dead robot is removed (the original keeps a
-    /// dead active robot alive only to preserve a raw pointer; the
-    /// win/lose accounting in `GetGameStatus` treats it as dead either
-    /// way).
-    fn remove_destroyed_robots(&mut self) {
+    /// (`cOperationPurge.cpp:778-800`). The dead `active` robot stays (the
+    /// original guarded a raw pointer), so its destroy sound and effect wait
+    /// until the active robot changes.
+    fn remove_destroyed_robots(&mut self, active: Option<RobotId>) {
         let dead: Vec<RobotId> = self
             .robots
             .iter()
-            .filter(|(_, r)| r.is_dead())
+            .filter(|(id, r)| r.is_dead() && active != Some(**id))
             .map(|(id, _)| *id)
             .collect();
         for id in dead {

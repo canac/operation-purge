@@ -331,7 +331,7 @@ fn status_won_when_all_enemies_dead() {
             r.health = 0.0;
         }
     }
-    world.frame(0.0, None); // removes the destroyed enemies
+    world.frame(0.0, None, None); // removes the destroyed enemies
     assert_eq!(world.status(), Status::Won);
 }
 
@@ -344,7 +344,7 @@ fn status_lost_when_active_team_wiped() {
             r.health = 0.0;
         }
     }
-    world.frame(0.0, None);
+    world.frame(0.0, None, None);
     assert_eq!(world.status(), Status::Lost);
 }
 
@@ -354,7 +354,7 @@ fn status_draw_when_everyone_dead() {
     for r in world.robots.values_mut() {
         r.health = 0.0;
     }
-    world.frame(0.0, None);
+    world.frame(0.0, None, None);
     assert_eq!(world.status(), Status::Draw);
 }
 
@@ -375,6 +375,7 @@ fn run_scripted_battle(seed: u64, cap: u32) -> (u32, Status) {
         elevate: 0.0,
         accel: 1000.0, // saturate desired speed to max_speed
         fire: true,
+        fire_types: 0,
     };
     let mut tick = 0u32;
     loop {
@@ -388,7 +389,7 @@ fn run_scripted_battle(seed: u64, cap: u32) -> (u32, Status) {
             r.ai = None;
             world.set_input(id, input);
         }
-        world.frame(dt, None);
+        world.frame(dt, None, None);
         tick += 1;
     }
 }

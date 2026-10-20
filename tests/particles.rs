@@ -102,7 +102,7 @@ fn firing_spawns_effects_and_particles() {
             },
         );
         let holes_before = world.holes.entries.len();
-        world.frame(dt, Some(id));
+        world.frame(dt, Some(id), None);
 
         // A shot fired point-blank at a wall is created and destroyed in the
         // same frame, so look for its fire sound rather than the projectile.
@@ -168,7 +168,7 @@ fn projectile_travel_effect_is_dynamic_and_drives_a_trail() {
     let mut trail_particles = false;
     let mut checked_dynamic = false;
     for _ in 0..120 {
-        world.frame(dt, None);
+        world.frame(dt, None, None);
         for p in &world.projectiles {
             if let Some(eff) = &p.travel_effect {
                 assert!(eff.is_dynamic, "trail must be a dynamic effect");
@@ -204,7 +204,7 @@ fn destroying_a_robot_spawns_its_destroy_effect() {
     world.robots.get_mut(&id).unwrap().health = 0.0;
 
     let dt = 1.0 / 60.0;
-    world.frame(dt, None);
+    world.frame(dt, None, None);
 
     assert!(world.robots.is_empty(), "the dead robot must be removed");
     assert_eq!(

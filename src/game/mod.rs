@@ -1,16 +1,6 @@
-//! `Game`: owns the `World` + render objects + camera + speed + timers
-//! (design §2), replacing `cOperationPurge`'s app half (source-map §3.4).
-//!
-//! M8 wires the **playable integration** (design §7 M8, §5.1, §5.5): the
-//! possession loop (2D select → possess → drive/turn/elevate/fire), the
-//! game-speed ramp/pause, live HUD polling, and forced-2D on the active
-//! robot's death. The frame pump lives in `app/mod.rs`; this module holds
-//! the CPU-side game logic it drives (all unit-testable without a window).
-//!
-//! PARITY notes are attached at each ported site with a `cOperationPurge.cpp`
-//! line citation. The pieces still deferred to M11 (the New Game screen,
-//! Confirm/GameOver modals, observer-point cheat fire, building 2D pan) are
-//! marked with `// M11:`.
+//! `Game`: the `World` plus `cOperationPurge`'s non-sim half (observer,
+//! game speed, 2D map view, modals, HUD polling). Window-free, so the whole
+//! command/possession loop is unit-tested headless; `app` drives it.
 
 pub mod hud;
 pub mod newgame;
@@ -21,9 +11,9 @@ use glam::{Vec2, Vec3};
 use crate::data::builtin::OBJECTS;
 use crate::ids::RobotId;
 use crate::input::commands::{binding, fire_binding, Command, FIRE_COMMANDS};
+use crate::math::f_clamp;
 use crate::input::Input;
 use crate::math::intersect::MovingRect;
-use crate::path::RoomGraph;
 use crate::math::camera::Camera;
 use crate::math::d3dx::D3DX_PI;
 use crate::sim::robot::{Throttle, ROBOT_SIZE_XY, ROBOT_SIZE_Z};
@@ -35,11 +25,11 @@ use screens::{ConfirmChoice, ConfirmKind, GameOverKind, Screen};
 /// PARITY: game speed starts paused at `0.0` after robot selection
 /// (`cOperationPurge.cpp:53` `m_fGameSpeed (INITIAL_GAME_SPEED)`); `T`/`G`
 /// ramp by `fGameSpeedRate * dt`, `Q` sets it to `0`, no upper bound
-/// (`cOperationPurge.cpp:1132-1145`, design §5.1).
+/// (`cOperationPurge.cpp:1132-1145`).
 pub const INITIAL_GAME_SPEED: f32 = 0.0;
 
 /// PARITY: the enemy-visible HUD/alarm poll runs every 0.25 s of *game* time
-/// (`cOperationPurge.cpp:586`, design §5.3).
+/// (`cOperationPurge.cpp:586`).
 pub const ENEMY_VISIBLE_POLL_SECONDS: f32 = 0.25;
 
 /// PARITY: `MIN_VISIBLE_SIZE` — the smallest 2D-map window, in rooms
@@ -63,9 +53,8 @@ pub enum ObserverType {
 }
 
 /// The whole live game: the simulation plus every app-half field
-/// (`cOperationPurge`'s non-sim members). Rendering/audio are owned by the
-/// app (`app/mod.rs`); this struct is deliberately window-free so the loop
-/// logic is unit-tested headless.
+/// (`cOperationPurge`'s non-sim members). Rendering and audio live in the
+/// app.
 pub struct Game {
     pub world: World,
     pub screen: Screen,
@@ -80,13 +69,14 @@ pub struct Game {
     pub active_robot: Option<RobotId>,
     /// `m_bActiveIsEnemy`.
     pub active_is_enemy: bool,
-    /// `m_idActiveRobotOld` / `m_ObserverTypeOld`: the vantage held when 2D
-    /// mode was entered voluntarily, whose robot gets its AI reset on
-    /// `SetObserver`.
+    /// `m_idActiveRobotOld` / `m_ObserverTypeOld` / `m_pt3ObserverOld`: the
+    /// vantage held when 2D mode was entered voluntarily, restored by
+    /// `Exit2DMode`; its robot gets its AI reset on `SetObserver`.
     active_robot_old: Option<RobotId>,
     observer_type_old: ObserverType,
+    observer_point_old: Vec3,
     /// `m_pt3Observer` / `m_angObserverTheta` / `m_angObserverPhi` (the free
-    /// observer camera pose; the M8 possession loop leaves it at defaults).
+    /// observer camera pose).
     pub observer_point: Vec3,
     pub observer_theta: f32,
     pub observer_phi: f32,
@@ -95,11 +85,10 @@ pub struct Game {
     /// static in `ExecuteCommands`, `cOperationPurge.cpp:1204`).
     cheat_fire_cooldown: f32,
 
-    /// `m_bEnableCheating` (empty New Game password enables cheats, design
-    /// §1.3). Default off until the New Game screen sets it (M11).
+    /// `m_bEnableCheating` (an empty New Game password enables cheats).
     pub cheats_enabled: bool,
 
-    // --- HUD / display toggles + polled flags (design §5.3) ---
+    // --- HUD / display toggles + polled flags ---
     /// `m_bShowMap` (F1 minimap in 3D mode).
     pub show_map: bool,
     /// `m_bEnemyVisible` (0.25 s game-time poll).
@@ -108,8 +97,8 @@ pub struct Game {
     pub targeted: bool,
     /// Whether the active robot sits above a center.
     pub above_center: bool,
-    /// `fLastTime` for the 0.25 s enemy-visible poll (ex-static → field,
-    /// design §5.1; `cOperationPurge.cpp:584`).
+    /// `fLastTime` for the 0.25 s enemy-visible poll (a function-local
+    /// static in `GetInfoString`, `cOperationPurge.cpp:584`).
     pub enemy_visible_last_time: f32,
 
     /// The mouse position as a window fraction (`cMainWindow::GetMousePosition`,
@@ -139,12 +128,13 @@ pub struct Game {
 
 impl Game {
     /// Build a fresh game around an already-constructed [`World`], entering
-    /// the 2D map at speed 0 (design §5.5: New Game OK → Map2D at 0.0).
+    /// the 2D map at speed 0 with no robot to return to (`StartGame` ends in
+    /// `Enter2DMode (true)`, `cOperationPurge.cpp:296-305`).
     pub fn new(world: World) -> Self {
         Self {
             world,
             screen: Screen::Map2D {
-                forced_by_death: false,
+                forced_by_death: true,
             },
             game_speed: INITIAL_GAME_SPEED,
             observer_type: ObserverType::Robot,
@@ -152,6 +142,7 @@ impl Game {
             active_is_enemy: false,
             active_robot_old: None,
             observer_type_old: ObserverType::Robot,
+            observer_point_old: Vec3::ZERO,
             observer_point: Vec3::ZERO,
             observer_theta: 0.0,
             observer_phi: 0.0,
@@ -203,21 +194,11 @@ impl Game {
             }
         }
         let rect = self.building_rect();
-        // `fClamp`: no panic on lo > hi, unlike `f32::clamp`.
-        let clamp = |v: f32, lo: f32, hi: f32| {
-            if v < lo {
-                lo
-            } else if v > hi {
-                hi
-            } else {
-                v
-            }
-        };
-        self.map_size.x = clamp(self.map_size.x, MIN_VISIBLE_SIZE, rect.x);
-        self.map_size.y = clamp(self.map_size.y, MIN_VISIBLE_SIZE, rect.y);
+        self.map_size.x = f_clamp(self.map_size.x, MIN_VISIBLE_SIZE, rect.x);
+        self.map_size.y = f_clamp(self.map_size.y, MIN_VISIBLE_SIZE, rect.y);
         let half = self.map_size * 0.5;
-        self.map_center.x = clamp(self.map_center.x, half.x, rect.x - half.x);
-        self.map_center.y = clamp(self.map_center.y, half.y, rect.y - half.y);
+        self.map_center.x = f_clamp(self.map_center.x, half.x, rect.x - half.x);
+        self.map_center.y = f_clamp(self.map_center.y, half.y, rect.y - half.y);
     }
 
     /// Top-left of the visible map window, in room units.
@@ -263,19 +244,13 @@ impl Game {
         self.in_2d() || (self.in_confirm() && matches!(self.confirm_return, Some(Screen::Map2D { .. })))
     }
 
-    /// In 3D play or the free observer camera (both step the sim).
-    pub fn in_3d(&self) -> bool {
-        matches!(self.screen, Screen::Play3D | Screen::Observer)
-    }
-
     /// A confirmation modal is up.
     pub fn in_confirm(&self) -> bool {
         matches!(self.screen, Screen::Confirm { .. })
     }
 
-    /// PARITY: the sim is frozen in the 2D map and behind any modal
-    /// (`cOperationPurge.cpp:1229-1233`; modal freeze is the FIX-ledger
-    /// non-blocking-modal replacement, design §1.3).
+    /// PARITY: the sim is frozen in the 2D map (`cOperationPurge.cpp:1229-1233`)
+    /// and behind any modal, as the blocking `MessageBox` froze it.
     pub fn sim_frozen(&self) -> bool {
         self.in_2d() || self.in_confirm()
     }
@@ -288,17 +263,6 @@ impl Game {
         }
     }
 
-    /// Public edge/level command queries so the app (which owns the profiler
-    /// UI + window) can test bound keys without duplicating the binding
-    /// table.
-    pub fn command_just_pressed(&self, cmd: Command, input: &Input) -> bool {
-        self.cmd_pressed(cmd, input)
-    }
-
-    pub fn command_down(&self, cmd: Command, input: &Input) -> bool {
-        self.cmd_down(cmd, input)
-    }
-
     /// PARITY: `m_bForceChange` — set by `Enter2DMode(true)` when the active
     /// robot died; while true the user may not cancel back into 3D
     /// (`cOperationPurge.cpp:1022-1035`).
@@ -309,12 +273,6 @@ impl Game {
                 forced_by_death: true
             }
         )
-    }
-
-    /// The current win/lose/draw status (`GetGameStatus`); the app pops the
-    /// GameOver modal off this (M11).
-    pub fn status(&self) -> Status {
-        self.world.status()
     }
 
     // ==================== screen / observer transitions ====================
@@ -335,6 +293,7 @@ impl Game {
         } else {
             self.active_robot_old = self.active_robot;
             self.observer_type_old = self.observer_type;
+            self.observer_point_old = self.observer_point;
         }
     }
 
@@ -402,31 +361,30 @@ impl Game {
     }
 
     /// PARITY: `commandExit2DMode` handler (`cOperationPurge.cpp:1020-1035`).
-    /// Cancels the 2D selection and resumes 3D — but only when the change was
-    /// **not** forced by the active robot's death.
+    /// Restores the vantage saved by `Enter2DMode` and resumes 3D, unless the
+    /// change was forced. Like the original it leaves `active_is_enemy` and
+    /// the observer angles as the 2D selection set them.
     pub fn cancel_2d(&mut self) -> bool {
         if !self.in_2d() || self.forced_by_death() {
             return false;
         }
-        // Only resume if there is a vantage to resume to.
-        if self.active_robot.is_some() || self.observer_type == ObserverType::Point {
-            self.screen = if self.observer_type == ObserverType::Point {
-                Screen::Observer
-            } else {
-                Screen::Play3D
-            };
-            true
+        self.active_robot = self.active_robot_old;
+        self.observer_type = self.observer_type_old;
+        self.observer_point = self.observer_point_old;
+        self.screen = if self.observer_type == ObserverType::Point {
+            Screen::Observer
         } else {
-            false
-        }
+            Screen::Play3D
+        };
+        true
     }
 
     // ===================== confirm modals / restart =====================
 
-    /// Open a non-blocking `Confirm` modal (FIX: replaces the C++ mid-frame
-    /// `MessageBox`, design §1.3). The current screen is captured so No /
-    /// Cancel-resume can restore it. The caller (app) stops all sounds
-    /// **first** (design §5.4 ordering).
+    /// Open a non-blocking `Confirm` modal in place of the original's
+    /// mid-frame `MessageBox`. The current screen is captured so No /
+    /// Cancel-resume can restore it; the app stops all sounds before the
+    /// frozen frame renders.
     pub fn request_confirm(&mut self, kind: ConfirmKind) {
         if self.in_confirm() {
             return;
@@ -504,13 +462,9 @@ impl Game {
     }
 
     /// PARITY: `cOperationPurge::ExecuteCommands` (`cOperationPurge.cpp:880-1225`).
-    /// Runs **every** frame regardless of focus (design §5.1); `real_dt` is
-    /// the wall-clock delta (the game-speed ramp and mouse feel are in real
-    /// time, exactly as the C++ passes `fTimeElapsed`). The M8 subset covers:
-    /// 2D-map selection/possession, the game-speed ramp/pause, AI-mode toggle,
-    /// and the possession control (fire / throttle / turn / elevate / accel).
-    /// Profiler toggles, building resize/pan and observer-point cheat fire are
-    /// M11.
+    /// Runs every frame regardless of focus; `real_dt` is the wall-clock
+    /// delta (the game-speed ramp and mouse feel are in real time, exactly as
+    /// the C++ passes `fTimeElapsed`). The profiler toggles are the app's.
     pub fn execute_commands(&mut self, input: &Input, real_dt: f32) {
         self.player_input = None;
 
@@ -526,15 +480,15 @@ impl Game {
         let elevate_rate = ui.elevate_rate;
         let accelerate_rate = ui.accelerate_rate;
 
-        // PARITY: EndGame (Esc) / Restart (F4) are tested at the very top of
-        // `ExecuteCommands`, before the 2D-mode gate, so they fire in both
-        // modes (`cOperationPurge.cpp:889-903`). Each opens a non-blocking
-        // Confirm modal (FIX: no mid-frame MessageBox, design §1.3).
-        if self.cmd_down(Command::EndGame, input) {
+        // PARITY: EndGame (Esc) / Restart (F4) are tested before the 2D-mode
+        // gate, so they fire in both modes (`cOperationPurge.cpp:889-903`).
+        // FIX: on the press edge, not `bDown`: the blocking MessageBox ate the
+        // held key, while a modal answered with Esc still down would reopen.
+        if self.cmd_pressed(Command::EndGame, input) {
             self.request_confirm(ConfirmKind::EndGame);
             return;
         }
-        if self.cmd_down(Command::Restart, input) {
+        if self.cmd_pressed(Command::Restart, input) {
             self.request_confirm(ConfirmKind::Restart);
             return;
         }
@@ -640,10 +594,12 @@ impl Game {
                     .get(&id)
                     .is_some_and(|r| !r.is_dead());
                 if alive {
-                    // Fire: the general fire command OR any per-projectile
-                    // fire command (`:1169-1183`).
-                    let fire = self.cmd_down(Command::FireProjectiles, input)
-                        || FIRE_COMMANDS.iter().any(|b| b.is_down(input));
+                    // `Fire ()` plus one `Fire (type)` per held per-type
+                    // command (`:1169-1183`).
+                    let fire = self.cmd_down(Command::FireProjectiles, input);
+                    let fire_types = (0..FIRE_COMMANDS.len())
+                        .filter(|&i| fire_binding(i).is_some_and(|b| b.is_down(input)))
+                        .fold(0u32, |mask, i| mask | 1 << i);
 
                     // No move keys down ⇒ cruise (`:1186-1192`).
                     let throttle = if self.cmd_down(Command::Decelerate, input) {
@@ -669,6 +625,7 @@ impl Game {
                             elevate,
                             accel,
                             fire,
+                            fire_types,
                         },
                     ));
                 }
@@ -693,8 +650,7 @@ impl Game {
         let (dx, dy) = input.mouse_delta();
         self.observer_theta += dx as f32 * D3DX_PI * 2.0 / rotate_rate;
         self.observer_phi += -(dy as f32) * D3DX_PI * 0.5 / elevate_rate;
-        // fClamp(m_angObserverPhi, -pi/2, pi/2) (`:1202`).
-        self.observer_phi = self.observer_phi.clamp(-D3DX_PI * 0.5, D3DX_PI * 0.5);
+        self.observer_phi = f_clamp(self.observer_phi, -D3DX_PI * 0.5, D3DX_PI * 0.5);
 
         // Movement speed rate (`:1064-1080`): 1/2/3 override the default.
         let speed = if self.cmd_down(Command::MoveObserverSpeed1, input) {
@@ -739,9 +695,9 @@ impl Game {
             b.ceiling_height,
         );
         const MARGIN: f32 = 0.0001;
-        self.observer_point.x = self.observer_point.x.clamp(MARGIN, size.x - MARGIN);
-        self.observer_point.y = self.observer_point.y.clamp(MARGIN, size.y - MARGIN);
-        self.observer_point.z = self.observer_point.z.clamp(MARGIN, size.z - MARGIN);
+        self.observer_point.x = f_clamp(self.observer_point.x, MARGIN, size.x - MARGIN);
+        self.observer_point.y = f_clamp(self.observer_point.y, MARGIN, size.y - MARGIN);
+        self.observer_point.z = f_clamp(self.observer_point.z, MARGIN, size.z - MARGIN);
 
         // Toggle map (`:1114-1117`).
         if self.cmd_pressed(Command::ToggleMap, input) {
@@ -783,14 +739,12 @@ impl Game {
     // ============================= advance =============================
 
     /// PARITY: `cOperationPurge::FrameChange` (`cOperationPurge.cpp:1227-1420`).
-    /// Called only when focused (design §5.1). Commits the player's input
+    /// Called only when focused. Commits the player's input
     /// for the possessed robot, steps the world (AI included) by
     /// `real_dt * game_speed`, forces the 2D map if the active robot died, and
     /// refreshes the HUD poll flags. Objects are **not** moved in 2D mode
     /// (`:1229-1233`).
     pub fn advance(&mut self, real_dt: f32) {
-        // PARITY: no objects move in the 2D map (`:1229-1233`); the sim is
-        // also frozen behind any modal (FIX non-blocking modal, design §1.3).
         if self.sim_frozen() {
             return;
         }
@@ -810,7 +764,9 @@ impl Game {
             self.world.set_input(id, inp);
         }
 
-        self.world.frame(dt, possessed);
+        // The dead active robot outlives its death until the active robot
+        // changes (`RemoveDestroyedRobots`, `cOperationPurge.cpp:785-787`).
+        self.world.frame(dt, possessed, self.active_robot);
 
         // Active robot destroyed ⇒ force the 2D map (`:1242-1245`).
         if self.observer_type != ObserverType::Point {
@@ -895,7 +851,6 @@ impl Game {
         };
         let mvd =
             self.world.game_data.robot_types[active.robot_type.get() as usize].max_visible_dist;
-        let graph = RoomGraph::new(&self.world.building);
         let size = Vec2::new(ROBOT_SIZE_XY, ROBOT_SIZE_XY);
         for r in self.world.robots.values() {
             if r.is_dead() || r.team == active.team {
@@ -910,7 +865,7 @@ impl Game {
                 size,
                 stop_time: 1.0,
             };
-            if !graph.building.intersect_moving_rect(mrc).hit {
+            if !self.world.building.intersect_moving_rect(mrc).hit {
                 return true;
             }
         }
@@ -971,8 +926,8 @@ impl Game {
         })
     }
 
-    /// Assemble the live HUD snapshot the status block is rendered from
-    /// (design §5.3), polling the current world/observer state.
+    /// Assemble the live HUD snapshot the status block is rendered from,
+    /// polling the current world/observer state.
     pub fn hud_snapshot(&self) -> HudSnapshot {
         let def = &self.world.game_data.game_definitions[self.world.game_def.get() as usize];
         let n_teams = def.teams.len();
@@ -1002,7 +957,6 @@ impl Game {
         }
     }
 
-    /// The full status text (`GetInfoString`), assembled from the live poll.
     /// The HUD text for the current mode (`Render2D`, `cOperationPurge.cpp:2837-2856`):
     /// in 2D only the robot under the mouse, else the full status block.
     pub fn status_text(&self) -> String {
@@ -1075,10 +1029,11 @@ mod tests {
     }
 
     #[test]
-    fn starts_in_map2d_at_zero_speed() {
-        let g = game();
+    fn starts_in_map2d_at_zero_speed_with_nothing_to_cancel_to() {
+        let mut g = game();
         assert!(g.in_2d());
-        assert!(!g.forced_by_death());
+        assert!(g.forced_by_death());
+        assert!(!g.cancel_2d());
         assert_eq!(g.game_speed, INITIAL_GAME_SPEED);
         assert_eq!(g.game_speed, 0.0);
     }
@@ -1174,6 +1129,58 @@ mod tests {
         assert!(g.in_2d());
         assert!(g.cancel_2d());
         assert!(matches!(g.screen, Screen::Play3D));
+    }
+
+    #[test]
+    fn cancel_2d_restores_the_previous_vantage() {
+        let mut g = game();
+        let mut ids = g.world.robots.keys().copied();
+        let (first, second) = (ids.next().unwrap(), ids.next().unwrap());
+        g.select_robot(first);
+        g.set_observer();
+        g.enter_2d_mode(false);
+        g.select_robot(second);
+        assert!(g.cancel_2d());
+        assert_eq!(g.active_robot, Some(first));
+        assert!(matches!(g.screen, Screen::Play3D));
+
+        g.enter_2d_mode(false);
+        g.select_observer_point(Vec2::new(10.0, 10.0));
+        g.set_observer();
+        let point = g.observer_point;
+        g.enter_2d_mode(false);
+        g.select_observer_point(Vec2::new(30.0, 30.0));
+        assert!(g.cancel_2d());
+        assert_eq!(g.observer_type, ObserverType::Point);
+        assert_eq!(g.observer_point, point);
+        assert!(matches!(g.screen, Screen::Observer));
+    }
+
+    #[test]
+    fn the_dead_active_robot_stays_until_the_active_robot_changes() {
+        let mut g = game();
+        let id = *g
+            .world
+            .robots
+            .iter()
+            .find(|(_, r)| r.team == TeamId(0))
+            .map(|(id, _)| id)
+            .unwrap();
+        g.select_robot(id);
+        g.set_observer();
+        g.world.robots.get_mut(&id).unwrap().health = 0.0;
+        g.game_speed = 1.0;
+        g.ignore_game_end = true;
+        g.advance(0.016);
+        assert!(g.world.robots.contains_key(&id));
+        assert!(g.in_2d());
+
+        let other = *g.world.robots.iter().find(|(_, r)| !r.is_dead()).unwrap().0;
+        g.select_robot(other);
+        g.set_observer();
+        g.game_speed = 1.0;
+        g.advance(0.016);
+        assert!(!g.world.robots.contains_key(&id));
     }
 
     #[test]

@@ -156,7 +156,7 @@ fn ai_drives_to_center_and_resupplies() {
     let dt = 1.0 / 60.0;
     let mut resupplied = false;
     for _ in 0..6000 {
-        world.frame(dt, None);
+        world.frame(dt, None, None);
         let r = world.robots.get(&id).unwrap();
         if r.proj_states.iter().any(|s| s.projectiles_left > 0.0) {
             resupplied = true;
@@ -204,7 +204,7 @@ fn ai_hunts_and_damages_enemy() {
     let dt = 1.0 / 60.0;
     let mut damaged = false;
     for _ in 0..6000 {
-        world.frame(dt, None);
+        world.frame(dt, None, None);
         let health: f32 = world.robots.values().map(|r| r.health).sum();
         // A robot took damage (projectile or crash) => combat happened.
         if world.robots.len() < 2 || health + 1e-3 < start_health {
@@ -242,7 +242,7 @@ fn two_robots_collide_and_enter_idle() {
     let dt = 1.0 / 60.0;
     let mut collided_seen = false;
     for _ in 0..4000 {
-        world.frame(dt, None);
+        world.frame(dt, None, None);
         if world.robots.values().any(|r| r.collided) {
             collided_seen = true;
             break;
@@ -298,7 +298,7 @@ fn run_ai_battle(seed: u64, cap: u32) -> (u32, Status, Vec<(u32, u32, u32, u32)>
         if status != Status::None || tick >= cap {
             return (tick, status, fingerprint(&world));
         }
-        world.frame(dt, None);
+        world.frame(dt, None, None);
         tick += 1;
     }
 }

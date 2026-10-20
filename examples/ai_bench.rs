@@ -33,7 +33,7 @@ fn main() {
             break;
         }
         let t = Instant::now();
-        world.frame(dt, None);
+        world.frame(dt, None, None);
         let elapsed = t.elapsed();
         frame_time += elapsed;
         worst = worst.max(elapsed);
