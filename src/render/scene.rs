@@ -398,9 +398,8 @@ impl SceneRenderer {
             let textures = &self.sprite_textures;
             let bind = |t: SpriteTex| textures.get(t).bind();
 
-            // PARITY: `Render3D` order (`cOperationPurge.cpp:2866-3030`); every
-            // 3D pass culls D3DCULL_CCW (`cBuilding3D.cpp:80`, `cCenter3D.cpp:41`,
-            // `:2885`, `cRobot3D.cpp:86`).
+            // PARITY: `Render3D` order (`cOperationPurge.cpp:2866-3030`), all D3DCULL_CCW
+            // (`cBuilding3D.cpp:80`, `cCenter3D.cpp:41`, `:2885`, `cRobot3D.cpp:86`).
             gl.set_cull(CullMode::Ccw);
             pass.building.render(&self.programs.lit_textured, &m, &self.building_textures);
 
