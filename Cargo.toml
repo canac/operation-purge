@@ -46,7 +46,6 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 include_dir = "0.7.4"
 kira = { version = "0.12.1", default-features = false, features = ["cpal"] }
 rand = "0.10.2"
-raw-window-handle = "0.6.2"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
 toml = "1.1.2"
