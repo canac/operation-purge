@@ -506,3 +506,14 @@ fn observer_cheat_fire_respects_the_cooldown_while_held() {
     g.execute_commands(&input, 0.016);
     assert_eq!(g.world.projectiles.len(), after_first, "cooldown blocks held-fire");
 }
+
+#[test]
+fn end_game_yes_then_cancelled_new_game_resumes_play() {
+    let mut g = game();
+    play3d(&mut g);
+    g.request_confirm(ConfirmKind::EndGame);
+    assert_eq!(g.resolve_confirm(ConfirmChoice::Yes), ConfirmAction::NewGame);
+    // The app shows New Game; on Cancel the game must not still be modal.
+    assert!(!g.in_confirm());
+    assert!(matches!(g.screen, Screen::Play3D));
+}

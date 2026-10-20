@@ -432,7 +432,11 @@ impl Game {
             ConfirmAction::Restart => {
                 self.restart();
             }
-            // NewGame / Exit / None: the app rebuilds the world / quits.
+            // The New Game screen may be cancelled, resuming this game as it was.
+            ConfirmAction::NewGame => {
+                self.screen = self.confirm_return.take().unwrap_or(Screen::Play3D);
+            }
+            // Exit / None: the app quits.
             _ => {}
         }
         action

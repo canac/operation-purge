@@ -41,7 +41,7 @@ The frame pump is `app::AppRunner::pump` (design §5.1): `dt = min(now−last,
 only while focused (focus loss clears input + freezes the sim). The New Game
 screen and all modals freeze the game.
 
-### Controls (the bound keys come from `[ui].commands` in `GameData.toml`)
+### Controls (compiled in, `src/input/commands.rs`; full key table in the README)
 
 | Where | Action | Default command |
 |---|---|---|
@@ -105,22 +105,43 @@ screen and all modals freeze the game.
    interaction; on **exit** `Profile output.txt` is written to the OS
    data-local dir (`dirs::data_local_dir()/operation-purge/`).
 
-### Still pending / deferred (not M11)
+### Still pending / deferred
 
-- **Wall holes at 0.005 offset**, projectile/particle **sprite rendering**,
-  and the **2D top-down map overlay** (incl. arrow-pan / `Ctrl`+arrow resize)
-  are computed by the sim every frame but are not yet drawn — sprite/overlay
-  draw wiring rides on the M5 sprite batcher. The New Game screen, modals, and
-  profiler pane are drawn as **plain overlay text** (top-left / right-third);
-  a boxed dialog layout is cosmetic follow-up.
-- **Per-event 3D sounds** (fire/collision/destroy): clips are preloaded and
-  voice pools registered; the DS3D **listener** (every 10th frame) + **alarm
-  loops** are driven and **stopped before any modal** (design §5.4). Emitting
-  the per-event one-shots needs a World frame-event log (follow-up). Audio is
-  muted automatically if no output device is available.
 - **Internal-error fatal modal**: `ConfirmKind::InternalError` + its resolve
   path (Yes → exit) exist; wiring the errorlog channel to raise it at runtime
-  is a follow-up (the modal machinery and prompt are in place).
+  is a follow-up.
+- **Face culling** stays off (`WindingDecision::CullNone`) until the winding
+  checklist below is signed off at a display. The original enabled
+  `D3DCULL_CCW` for holes and later passes; with culling off those faces
+  just draw both sides.
+- **AI cost**: robots chasing an unseen target re-run the path search every
+  frame, exactly like the original (`cAIRobot.cpp:464`). That is ~5 ms per
+  frame with ~20 robots in release builds (see the `Move AI robots`
+  profiler scope).
+- **2D map zoom spills**: as in the original, a zoomed 2D map (Ctrl+arrows)
+  still draws walls past the map's screen rectangle.
+
+## Scripted E2E runs (no human needed)
+
+`scripts/e2e.sh SCRIPT OUT_DIR [--seed N]` launches the real window
+(1280×800, fixed 1/60 s steps) against a throwaway config, feeds it the
+script's input, and writes PNG captures + state dumps into `OUT_DIR`. Real
+keyboard/mouse input is ignored while a script runs. Grammar is documented
+at the top of `src/app/e2e.rs`; a minimal session:
+
+```text
+frames 3
+key Enter            # New Game OK
+cursor_robot 0       # hover the first friendly robot on the 2D map
+click left           # select it
+key KeyF             # possess -> 3D
+down KeyT            # speed the game up
+frames 120
+up KeyT
+shot play            # OUT_DIR/play.png
+state play           # OUT_DIR/play.txt (screen, robots, sounds played...)
+quit
+```
 
 ## (Retained) M4/M5 — winding gate + static scene notes
 

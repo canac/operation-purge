@@ -285,11 +285,9 @@ impl<T: Copy + PartialEq> SpriteBatch<T> {
     fn ordered(&self) -> Vec<&Entry<T>> {
         let mut order: Vec<&Entry<T>> = self.sprites.iter().collect();
         if self.sort_depth {
-            order.sort_by(|a, b| {
-                b.depth
-                    .partial_cmp(&a.depth)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
+            // `total_cmp`: NaN depths (zero-velocity emitter quirk) must not
+            // break the sort's total-order contract, which panics.
+            order.sort_by(|a, b| b.depth.total_cmp(&a.depth));
         }
         order
     }
@@ -567,5 +565,26 @@ mod tests {
     fn projectile_black_silhouette_color_survives_conversion() {
         // PARITY (cProjectile.cpp:211): tint literally (0,0,0,1).
         assert_eq!(rgba_to_u8(Rgba::new(0.0, 0.0, 0.0, 1.0)), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn depth_sort_survives_nan_depths() {
+        let view = look_down_y();
+        let mut batch = SpriteBatch::new();
+        batch.start(view, true, true);
+        for i in 0..64 {
+            let y = if i % 3 == 0 { f32::NAN } else { i as f32 };
+            batch.add(&SpriteData {
+                center: Vec3::new(0.0, y, 0.0),
+                offset: Vec3::ZERO,
+                size: Vec2::ONE,
+                rotation: 0.0,
+                axis: Axis::PositiveZ,
+                color: Rgba::new(1.0, 1.0, 1.0, 1.0),
+                texture: 0u32,
+            });
+        }
+        let (vertices, _) = batch.build();
+        assert_eq!(vertices.len(), 64 * 4);
     }
 }

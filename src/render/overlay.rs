@@ -417,6 +417,7 @@ impl Overlay2DRenderer {
     /// PARITY: the building half of `Render2D` (`cOperationPurge.cpp:2762-2835`):
     /// background (opaque in [`MapMode::Full2D`]), wall outline, centers,
     /// then robot markers, each culled to the visible window.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_map(
         &self,
         gl_state: &mut GlState,
