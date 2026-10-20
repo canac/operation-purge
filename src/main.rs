@@ -1,17 +1,15 @@
-//! Entry point (design §2 `main.rs`): CLI args, config load, startup.
-//!
-//! `anyhow` is used only here — every subsystem below `main` returns a
-//! typed error (`operation_purge::error`), per design §1.2.
+//! Entry point: CLI args, config load, startup.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use operation_purge::app::{config::Config, embedded};
+use operation_purge::log_error;
 use std::path::Path;
 
 struct Args {
     assets_dir: Option<String>,
     seed: Option<u64>,
-    /// Hidden flag: fixed per-frame dt for deterministic runs (design §5.1).
+    /// Hidden flag: fixed per-frame dt for deterministic runs.
     fixed_dt: Option<f32>,
     /// Hidden flags: scripted E2E run (see `app::e2e`).
     e2e: Option<String>,
@@ -98,13 +96,20 @@ fn resolve_assets_dir(configured: &str) -> String {
     if let Some(dest) = embedded::default_unpack_dir() {
         match embedded::ensure_unpacked(&dest) {
             Ok(()) => return dest.display().to_string(),
-            Err(e) => eprintln!("warning: could not unpack assets to {}: {e}", dest.display()),
+            Err(e) => log_error!("warning: could not unpack assets to {}: {e}", dest.display()),
         }
     }
     configured.to_string()
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        log_error!("fatal: {e:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let args = parse_args()?;
 
     let mut config = Config::load();
