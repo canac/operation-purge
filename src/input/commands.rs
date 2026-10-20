@@ -1,18 +1,12 @@
-//! The 36-entry command enum, in `eCommand` order (design §5.2; source-map
-//! §4.1 "Command index enum"), plus the per-projectile-type fire bindings.
-//!
-//! The key bindings themselves are **compiled in** ([`COMMAND_BINDINGS`] +
-//! [`FIRE_COMMANDS`]), transcribed from the original `GameData.xml`, rather
-//! than read from `GameData.toml` (user decision — same rationale as the
-//! hardcoded assets / `Objects` / `LightData`). PARITY: the enum order is the
-//! index space the original bound against; reordering it re-maps which key
-//! each [`COMMAND_BINDINGS`] slot drives.
+//! The 36-entry command enum, in `eCommand` order, plus the compiled-in key
+//! bindings ([`COMMAND_BINDINGS`], [`FIRE_COMMANDS`]) transcribed from the
+//! original `GameData.xml`.
 
 /// One of the 36 fixed (non-per-projectile) commands.
 ///
 /// PARITY: variant order matches `cGameData::s_aszCommandsNames`
-/// (GameEditor/cGameData.cpp:17-54) exactly, so `Command as usize` is a
-/// valid index into `COMMAND_ORDER` / the `[ui].commands` array.
+/// (GameEditor/cGameData.cpp:17-54) exactly, so `Command as usize` indexes
+/// [`COMMAND_BINDINGS`].
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Command {
     Restart,
@@ -20,6 +14,7 @@ pub enum Command {
     ToggleMap,
     ToggleProfilerRunning,
     ToggleProfilerVisible,
+    /// Bound but unhandled: the profiler pane has no keyboard navigation.
     ToggleProfilerInteraction,
     IncreaseBuildingWidth,
     IncreaseBuildingHeight,
@@ -53,62 +48,8 @@ pub enum Command {
     FireProjectiles,
 }
 
-/// Fixed iteration order — the same order `[ui].commands` in
-/// `GameData.toml` lists its 36 entries in (design §4.1). PARITY:
-/// verbatim `s_aszCommandsNames` order (cGameData.cpp:17-54).
-pub const COMMAND_ORDER: [Command; 36] = [
-    Command::Restart,
-    Command::EndGame,
-    Command::ToggleMap,
-    Command::ToggleProfilerRunning,
-    Command::ToggleProfilerVisible,
-    Command::ToggleProfilerInteraction,
-    Command::IncreaseBuildingWidth,
-    Command::IncreaseBuildingHeight,
-    Command::DecreaseBuildingWidth,
-    Command::DecreaseBuildingHeight,
-    Command::MoveBuildingRight,
-    Command::MoveBuildingDown,
-    Command::MoveBuildingLeft,
-    Command::MoveBuildingUp,
-    Command::Info,
-    Command::SelectObserverRobot,
-    Command::SelectObserverPosition,
-    Command::Enter2DMode,
-    Command::Exit2DMode,
-    Command::SetObserver,
-    Command::MoveObserverForwards,
-    Command::MoveObserverBackwards,
-    Command::MoveObserverRight,
-    Command::MoveObserverLeft,
-    Command::MoveObserverUp,
-    Command::MoveObserverDown,
-    Command::MoveObserverSpeed1,
-    Command::MoveObserverSpeed2,
-    Command::MoveObserverSpeed3,
-    Command::IncreaseGameSpeed,
-    Command::DecreaseGameSpeed,
-    Command::Pause,
-    Command::ToggleAIMode,
-    Command::Accelerate,
-    Command::Decelerate,
-    Command::FireProjectiles,
-];
-
-impl Command {
-    /// Position of this command in the fixed `eCommand` index space
-    /// (`COMMAND_ORDER`) — the same index `[ui].commands` binds against.
-    pub fn index(self) -> usize {
-        COMMAND_ORDER
-            .iter()
-            .position(|&c| c == self)
-            .expect("every Command variant is in COMMAND_ORDER")
-    }
-}
-
 /// A binding: key + modifier requirements. PARITY: modifiers test
-/// *either*-side keys (design §5.2 "modifier flags bControl/bAlt/bShift
-/// test either-side keys").
+/// *either*-side keys.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct CommandBinding {
     pub key: crate::input::keys::Key,
@@ -127,10 +68,9 @@ const fn cb(key: crate::input::keys::Key, control: bool, alt: bool, shift: bool)
     }
 }
 
-/// The 36 fixed command bindings, in `COMMAND_ORDER` index space
-/// (`commands[Command::index()]`). PARITY: transcribed verbatim from the
-/// original `GameData.xml` `[ui].commands` (Ctrl+arrows resize the building,
-/// Ctrl+Left-mouse drops the observer point, etc.).
+/// The 36 fixed command bindings, indexed by `Command as usize`. PARITY:
+/// transcribed verbatim from the original `GameData.xml` (Ctrl+arrows resize
+/// the building, Ctrl+Left-mouse drops the observer point, etc.).
 pub const COMMAND_BINDINGS: [CommandBinding; 36] = {
     use crate::input::keys::Key;
     [
@@ -213,82 +153,39 @@ impl CommandBinding {
     }
 }
 
-/// The full resolved binding set: the 36 fixed commands (in `COMMAND_ORDER`
-/// index space) plus one fire binding per projectile type. All compiled in
-/// (design §5.2) — see [`COMMAND_BINDINGS`] / [`FIRE_COMMANDS`].
-#[derive(Copy, Clone, Debug)]
-pub struct CommandBindings {
-    /// Indexed by `Command::index()` / `COMMAND_ORDER` position.
-    pub commands: [CommandBinding; 36],
-    /// One per `GameData.projectile_types` entry, in array order (the index
-    /// space `ProjectileType` refs point into).
-    pub fire_commands: &'static [CommandBinding],
+/// The binding for a fixed command.
+pub fn binding(command: Command) -> &'static CommandBinding {
+    &COMMAND_BINDINGS[command as usize]
 }
 
-/// The single, compiled-in binding set (design §5.2, user decision).
-pub const BINDINGS: CommandBindings = CommandBindings {
-    commands: COMMAND_BINDINGS,
-    fire_commands: &FIRE_COMMANDS,
-};
-
-impl CommandBindings {
-    /// The hardcoded bindings (no data path — keys are compiled in).
-    pub fn hardcoded() -> Self {
-        BINDINGS
-    }
-
-    /// The binding for a fixed command.
-    pub fn binding(&self, command: Command) -> &CommandBinding {
-        &self.commands[command.index()]
-    }
+/// The fire binding for projectile type `index`, if it has one.
+pub fn fire_binding(index: usize) -> Option<&'static CommandBinding> {
+    FIRE_COMMANDS.get(index)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // PARITY: pins the eCommand ABI (cGameData.cpp:17-54).
     #[test]
-    fn command_order_has_exactly_36_entries() {
-        assert_eq!(COMMAND_ORDER.len(), 36);
-    }
-
-    // PARITY: pins the eCommand ABI (cGameData.cpp:17-54). Index N here
-    // must equal s_aszCommandsNames[N] or GameData.toml [ui].commands
-    // bindings resolve to the wrong command.
-    #[test]
-    fn command_order_matches_ecommand_abi() {
-        assert_eq!(COMMAND_ORDER[0], Command::Restart);
-        assert_eq!(COMMAND_ORDER[1], Command::EndGame);
-        assert_eq!(COMMAND_ORDER[2], Command::ToggleMap);
-        assert_eq!(COMMAND_ORDER[14], Command::Info);
-        assert_eq!(COMMAND_ORDER[17], Command::Enter2DMode);
-        assert_eq!(COMMAND_ORDER[35], Command::FireProjectiles);
-    }
-
-    #[test]
-    fn command_index_is_the_inverse_of_command_order() {
-        for (i, &cmd) in COMMAND_ORDER.iter().enumerate() {
-            assert_eq!(cmd.index(), i);
-        }
+    fn command_discriminants_match_ecommand_abi() {
+        assert_eq!(Command::Restart as usize, 0);
+        assert_eq!(Command::EndGame as usize, 1);
+        assert_eq!(Command::ToggleMap as usize, 2);
+        assert_eq!(Command::Info as usize, 14);
+        assert_eq!(Command::Enter2DMode as usize, 17);
+        assert_eq!(Command::FireProjectiles as usize, COMMAND_BINDINGS.len() - 1);
     }
 
     use crate::input::keys::Key;
     use crate::input::Input;
 
-    fn binding(key: Key, control: bool, alt: bool, shift: bool) -> CommandBinding {
-        CommandBinding {
-            key,
-            control,
-            alt,
-            shift,
-        }
-    }
-
     #[test]
     fn plain_binding_ignores_extra_held_modifiers() {
         // PARITY: bExactModifiers = false — a command with no required
         // modifier still fires while Shift/Ctrl/Alt happen to be down.
-        let b = binding(Key::KeyF, false, false, false);
+        let b = cb(Key::KeyF, false, false, false);
         let mut input = Input::new();
         input.on_key_event(Key::KeyF, true);
         input.on_key_event(Key::ShiftLeft, true);
@@ -299,7 +196,7 @@ mod tests {
 
     #[test]
     fn required_modifier_must_be_held_either_side() {
-        let b = binding(Key::KeyR, true, false, false); // Ctrl+R
+        let b = cb(Key::KeyR, true, false, false); // Ctrl+R
         let mut input = Input::new();
         input.on_key_event(Key::KeyR, true);
         input.begin_frame();
@@ -313,7 +210,7 @@ mod tests {
 
     #[test]
     fn pressed_and_released_edges_respect_modifiers() {
-        let b = binding(Key::KeyP, false, false, true); // Shift+P
+        let b = cb(Key::KeyP, false, false, true); // Shift+P
         let mut input = Input::new();
         input.begin_frame(); // consume the first-frame edge suppression (FIX)
         input.on_key_event(Key::ShiftLeft, true);
@@ -331,23 +228,16 @@ mod tests {
     }
 
     #[test]
-    fn hardcoded_bindings_have_the_expected_shape_and_anchors() {
-        let bindings = CommandBindings::hardcoded();
-        assert_eq!(bindings.commands.len(), 36);
-        // One fire binding per shipped projectile type (Bullet/Rocket/Better).
-        assert_eq!(bindings.fire_commands.len(), 3);
-
-        // Anchor a few bindings against the original GameData.xml values.
-        assert_eq!(bindings.binding(Command::Restart).key, Key::F4);
-        assert_eq!(bindings.binding(Command::EndGame).key, Key::Escape);
-        assert_eq!(bindings.binding(Command::FireProjectiles).key, Key::Space);
-        // Ctrl+Right increases building width; Ctrl+Left-mouse drops the point.
-        let w = bindings.binding(Command::IncreaseBuildingWidth);
+    fn bindings_match_the_original_gamedata_anchors() {
+        assert_eq!(binding(Command::Restart).key, Key::F4);
+        assert_eq!(binding(Command::EndGame).key, Key::Escape);
+        assert_eq!(binding(Command::FireProjectiles).key, Key::Space);
+        let w = binding(Command::IncreaseBuildingWidth);
         assert_eq!((w.key, w.control), (Key::ArrowRight, true));
-        let p = bindings.binding(Command::SelectObserverPosition);
+        let p = binding(Command::SelectObserverPosition);
         assert_eq!((p.key, p.control), (Key::MouseLeft, true));
-        // Fire bindings: Bullet=Left, Rocket=Right mouse.
-        assert_eq!(bindings.fire_commands[0].key, Key::MouseLeft);
-        assert_eq!(bindings.fire_commands[1].key, Key::MouseRight);
+        assert_eq!(fire_binding(0).map(|b| b.key), Some(Key::MouseLeft));
+        assert_eq!(fire_binding(1).map(|b| b.key), Some(Key::MouseRight));
+        assert_eq!(fire_binding(3), None);
     }
 }

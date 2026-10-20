@@ -24,7 +24,6 @@ use winit::window::WindowId;
 use glam::Vec3;
 
 use crate::data::GameData;
-use crate::error::GameError;
 use crate::game::newgame::{NewGame, NewGameOutcome, NewGameParams};
 use crate::game::screens::{ConfirmAction, ConfirmChoice};
 use crate::game::Game;
@@ -291,13 +290,7 @@ impl AppRunner {
             TeamId(params.team_idx),
             seed,
         );
-        let mut game = match Game::new(world) {
-            Ok(g) => g,
-            Err(e) => {
-                self.init_error = Some(format!("game init failed: {e}"));
-                return;
-            }
-        };
+        let mut game = Game::new(world);
         // PARITY: empty New Game password enables cheats (design §1.3).
         game.cheats_enabled = params.cheats_enabled;
         self.game = Some(game);
@@ -1354,15 +1347,12 @@ impl ApplicationHandler for AppRunner {
     }
 }
 
-/// Run the winit event loop with the M8 game shell (real runtime only).
-pub fn run(config: Config, opts: RunOptions) -> Result<(), GameError> {
-    let event_loop = EventLoop::new()
-        .map_err(|e| GameError::Other(format!("event loop creation failed: {e}")))?;
+/// Run the winit event loop with the game shell.
+pub fn run(config: Config, opts: RunOptions) -> Result<(), winit::error::EventLoopError> {
+    let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = AppRunner::new(config, opts);
-    event_loop
-        .run_app(&mut app)
-        .map_err(|e| GameError::Other(format!("event loop error: {e}")))
+    event_loop.run_app(&mut app)
 }
 
 // ============================ audio (runtime) ============================

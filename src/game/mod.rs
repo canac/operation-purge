@@ -19,9 +19,8 @@ pub mod screens;
 use glam::{Vec2, Vec3};
 
 use crate::data::builtin::OBJECTS;
-use crate::error::GameError;
 use crate::ids::RobotId;
-use crate::input::commands::{Command, CommandBindings};
+use crate::input::commands::{binding, fire_binding, Command, FIRE_COMMANDS};
 use crate::input::Input;
 use crate::math::intersect::MovingRect;
 use crate::path::RoomGraph;
@@ -69,8 +68,6 @@ pub struct Game {
 
     /// `m_fGameSpeed`.
     pub game_speed: f32,
-    /// Resolved key bindings for the 36 commands + per-projectile fire.
-    pub bindings: CommandBindings,
 
     // --- observer / active robot (`m_ObserverType`, `m_idActiveRobot`) ---
     pub observer_type: ObserverType,
@@ -139,15 +136,13 @@ pub struct Game {
 impl Game {
     /// Build a fresh game around an already-constructed [`World`], entering
     /// the 2D map at speed 0 (design §5.5: New Game OK → Map2D at 0.0).
-    pub fn new(world: World) -> Result<Self, GameError> {
-        let bindings = CommandBindings::hardcoded();
-        Ok(Self {
+    pub fn new(world: World) -> Self {
+        Self {
             world,
             screen: Screen::Map2D {
                 forced_by_death: false,
             },
             game_speed: INITIAL_GAME_SPEED,
-            bindings,
             observer_type: ObserverType::Robot,
             active_robot: None,
             active_is_enemy: false,
@@ -170,7 +165,7 @@ impl Game {
             ignore_game_end: false,
             confirm_return: None,
         }
-        .with_full_map_view())
+        .with_full_map_view()
     }
 
     /// PARITY: `SetGameParams` shows the whole building (`cOperationPurge.cpp:144-147`).
@@ -497,11 +492,11 @@ impl Game {
     // ========================= command execution =========================
 
     fn cmd_down(&self, cmd: Command, input: &Input) -> bool {
-        self.bindings.binding(cmd).is_down(input)
+        binding(cmd).is_down(input)
     }
 
     fn cmd_pressed(&self, cmd: Command, input: &Input) -> bool {
-        self.bindings.binding(cmd).just_pressed(input)
+        binding(cmd).just_pressed(input)
     }
 
     /// PARITY: `cOperationPurge::ExecuteCommands` (`cOperationPurge.cpp:880-1225`).
@@ -644,11 +639,7 @@ impl Game {
                     // Fire: the general fire command OR any per-projectile
                     // fire command (`:1169-1183`).
                     let fire = self.cmd_down(Command::FireProjectiles, input)
-                        || self
-                            .bindings
-                            .fire_commands
-                            .iter()
-                            .any(|b| b.is_down(input));
+                        || FIRE_COMMANDS.iter().any(|b| b.is_down(input));
 
                     // No move keys down ⇒ cruise (`:1186-1192`).
                     let throttle = if self.cmd_down(Command::Decelerate, input) {
@@ -766,7 +757,7 @@ impl Game {
             let (theta, phi) = (self.observer_theta, self.observer_phi);
             for i in 0..n {
                 let ty = crate::ids::ProjectileTypeId(i as u32);
-                let type_binding = self.bindings.fire_commands.get(i);
+                let type_binding = fire_binding(i);
                 let type_down = type_binding.is_some_and(|b| b.is_down(input));
                 let type_pressed = type_binding.is_some_and(|b| b.just_pressed(input));
                 if (cooldown_ready && (general_down || type_down))
@@ -1076,7 +1067,7 @@ mod tests {
     }
 
     fn game() -> Game {
-        Game::new(shipped_world()).expect("bindings resolve")
+        Game::new(shipped_world())
     }
 
     #[test]

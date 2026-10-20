@@ -11,7 +11,7 @@ use operation_purge::game::screens::{
     ConfirmAction, ConfirmChoice, ConfirmKind, GameOverKind, Screen,
 };
 use operation_purge::ids::{GameDefId, RobotId, TeamId};
-use operation_purge::input::commands::{Command, CommandBinding};
+use operation_purge::input::commands::{binding, Command, CommandBinding};
 use operation_purge::input::keys::Key;
 use operation_purge::input::Input;
 use operation_purge::maze::Maze;
@@ -27,7 +27,7 @@ fn game() -> Game {
     let data = gamedata::load(&root.join("GameData.toml")).expect("GameData.toml parses");
     let maze = Maze::load(&root.join("MazeFiles/Small1.maz")).expect("Small1.maz loads");
     let world = World::new(data, maze, GameDefId(0), TeamId(0), 987654);
-    Game::new(world).expect("bindings resolve")
+    Game::new(world)
 }
 
 fn friendly_robot(game: &Game) -> RobotId {
@@ -106,7 +106,7 @@ fn game_speed_ramps_by_rate_times_dt_and_pause_zeroes_it() {
     // Increase (T).
     let mut input = Input::new();
     input.begin_frame(); // clear first-frame edge suppression
-    hold_command(&mut input, g.bindings.binding(Command::IncreaseGameSpeed));
+    hold_command(&mut input, binding(Command::IncreaseGameSpeed));
     input.begin_frame();
     g.execute_commands(&input, dt);
     assert!((g.game_speed - rate * dt).abs() < 1e-4, "speed = {}", g.game_speed);
@@ -114,7 +114,7 @@ fn game_speed_ramps_by_rate_times_dt_and_pause_zeroes_it() {
     // Pause (Q) → 0.
     let mut input = Input::new();
     input.begin_frame();
-    hold_command(&mut input, g.bindings.binding(Command::Pause));
+    hold_command(&mut input, binding(Command::Pause));
     input.begin_frame();
     g.execute_commands(&input, dt);
     assert_eq!(g.game_speed, 0.0);
@@ -129,7 +129,7 @@ fn game_speed_never_goes_below_zero() {
 
     let mut input = Input::new();
     input.begin_frame();
-    hold_command(&mut input, g.bindings.binding(Command::DecreaseGameSpeed));
+    hold_command(&mut input, binding(Command::DecreaseGameSpeed));
     input.begin_frame();
     g.execute_commands(&input, dt);
     assert_eq!(g.game_speed, 0.0, "clamped at 0 (no negative game speed)");
@@ -147,7 +147,7 @@ fn accelerate_command_sets_the_possessed_robots_throttle() {
 
     let mut input = Input::new();
     input.begin_frame();
-    hold_command(&mut input, g.bindings.binding(Command::Accelerate));
+    hold_command(&mut input, binding(Command::Accelerate));
     input.begin_frame();
 
     g.execute_commands(&input, 0.016);
@@ -196,7 +196,7 @@ fn fire_command_fires_the_possessed_robots_weapon() {
 
     let mut input = Input::new();
     input.begin_frame();
-    hold_command(&mut input, g.bindings.binding(Command::FireProjectiles));
+    hold_command(&mut input, binding(Command::FireProjectiles));
     input.begin_frame();
 
     g.execute_commands(&input, 0.016);
@@ -226,7 +226,7 @@ fn enter_2d_command_leaves_play3d() {
 
     let mut input = Input::new();
     input.begin_frame();
-    hold_command(&mut input, g.bindings.binding(Command::Enter2DMode));
+    hold_command(&mut input, binding(Command::Enter2DMode));
     input.begin_frame();
 
     g.execute_commands(&input, 0.016);
@@ -302,10 +302,10 @@ fn play3d(g: &mut Game) {
 }
 
 /// Snapshot `input` so that `cmd` reads as `just_pressed` this frame.
-fn press_edge(g: &Game, cmd: Command) -> Input {
+fn press_edge(cmd: Command) -> Input {
     let mut input = Input::new();
     input.begin_frame(); // frame 0: nothing down (suppresses first-frame edges)
-    hold_command(&mut input, g.bindings.binding(cmd));
+    hold_command(&mut input, binding(cmd));
     input.begin_frame(); // frame 1: down now, up previously ⇒ just_pressed
     input
 }
@@ -314,7 +314,7 @@ fn press_edge(g: &Game, cmd: Command) -> Input {
 fn esc_opens_end_game_confirm_and_no_resumes() {
     let mut g = game();
     play3d(&mut g);
-    let input = press_edge(&g, Command::EndGame);
+    let input = press_edge(Command::EndGame);
     g.execute_commands(&input, 0.016);
     assert_eq!(g.confirm_kind(), Some(ConfirmKind::EndGame));
     assert!(g.sim_frozen(), "sim frozen behind a modal");
@@ -328,7 +328,7 @@ fn esc_opens_end_game_confirm_and_no_resumes() {
 fn esc_end_game_yes_requests_new_game() {
     let mut g = game();
     play3d(&mut g);
-    let input = press_edge(&g, Command::EndGame);
+    let input = press_edge(Command::EndGame);
     g.execute_commands(&input, 0.016);
     // Yes → the app pops the New Game screen; the Game reports the action.
     assert_eq!(g.resolve_confirm(ConfirmChoice::Yes), ConfirmAction::NewGame);
@@ -344,7 +344,7 @@ fn f4_restart_confirm_yes_resets_the_world() {
     g.advance(0.05);
     assert!(g.world.game_time > t0);
 
-    let input = press_edge(&g, Command::Restart);
+    let input = press_edge(Command::Restart);
     g.execute_commands(&input, 0.016);
     assert_eq!(g.confirm_kind(), Some(ConfirmKind::Restart));
 
@@ -446,7 +446,7 @@ fn observer_moves_forward_along_heading_and_clamps_phi() {
     g.observer_theta = 0.0;
 
     let x0 = g.observer_point.x;
-    let input = press_edge(&g, Command::MoveObserverForwards);
+    let input = press_edge(Command::MoveObserverForwards);
     g.execute_commands(&input, 0.1);
     assert!(g.observer_point.x > x0, "moved +x along theta=0 heading");
 
@@ -469,7 +469,7 @@ fn observer_cheat_fire_spawns_projectiles_only_when_cheats_on() {
 
     // Cheats OFF: firing does nothing.
     g.cheats_enabled = false;
-    let input = press_edge(&g, Command::FireProjectiles);
+    let input = press_edge(Command::FireProjectiles);
     let before = g.world.projectiles.len();
     g.execute_commands(&input, 0.016);
     assert_eq!(g.world.projectiles.len(), before, "no cheat fire without cheats");
@@ -477,7 +477,7 @@ fn observer_cheat_fire_spawns_projectiles_only_when_cheats_on() {
     // Cheats ON: a fresh press spawns one projectile per projectile type.
     g.cheats_enabled = true;
     let n_types = g.world.game_data.projectile_types.len();
-    let input = press_edge(&g, Command::FireProjectiles);
+    let input = press_edge(Command::FireProjectiles);
     g.execute_commands(&input, 0.016);
     assert_eq!(g.world.projectiles.len(), before + n_types);
 }
@@ -494,7 +494,7 @@ fn observer_cheat_fire_respects_the_cooldown_while_held() {
     // Hold fire down (NOT a fresh press): first frame fires, cooldown set.
     let mut input = Input::new();
     input.begin_frame();
-    hold_command(&mut input, g.bindings.binding(Command::FireProjectiles));
+    hold_command(&mut input, binding(Command::FireProjectiles));
     input.begin_frame();
     g.execute_commands(&input, 0.016);
     let after_first = g.world.projectiles.len();
