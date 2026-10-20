@@ -1,31 +1,25 @@
 //! Three-tier particle system: `cParticle` / `cParticleEmitter` /
-//! `cParticleEffect` (source-map §3.6), ported from `cParticle.cpp`,
-//! `cParticleEmitter.cpp`, `cParticleEffect.cpp`.
+//! `cParticleEffect`, ported from `cParticle.cpp`, `cParticleEmitter.cpp`,
+//! `cParticleEffect.cpp`, plus the particle/hole pools `cOperationPurge`
+//! owns (`AddParticle`/`AddHole`/`AddParticleEffect`,
+//! `cOperationPurge.cpp:1421-1513`). `sim::world` drives them in
+//! `MoveObjects` order (`cOperationPurge.cpp:683-772`).
 //!
-//! NOTE ON GROUND TRUTH: the shipping `cOperationPurge` never wired the
-//! particle classes into its game loop (only the `s_MaximumParticles = 1024`
-//! / `s_MaximumHoles = 256` constants survive, `cOperationPurge.cpp:18-19`;
-//! `AddParticle` is referenced by `cParticleEmitter.cpp` but defined
-//! nowhere in the shipping tree). The three particle classes themselves are
-//! faithful ports; their integration into `World::frame` follows the design
-//! contract (§7 M9): effects fire on projectile fire/travel/collision and
-//! robot destroy events, feeding the existing view-space sprite batcher.
-//!
-//! PARITY (design §1.3, preserved verbatim):
-//! - Fixed 1024-slot arena, linear replace-oldest-by-life-fraction scan
-//!   (`s_MaximumParticles`, source-map §7): a free slot (life fraction
-//!   `+inf`) wins; otherwise the particle closest to death is evicted.
+//! PARITY (preserved verbatim):
+//! - 1024-particle cap; when full the particle with the greatest life
+//!   fraction is replaced (`cOperationPurge.cpp:1459-1476`).
 //! - `fEmitRate` is a **delay** between emissions, not a frequency
 //!   (`cParticleEmitter.cpp:57-73`); sub-frame spawn interpolation +
 //!   pre-aging (`pNewParticle->Move(dt*(1-factor))`) keep trails gap-free.
 //! - Emitter shortest-arc quaternion ported verbatim, including degenerate
 //!   cases (NaN on zero velocity, `(0,0,1,0)` fallback on anti-parallel) —
-//!   NOT glam's `from_rotation_arc` (see `math::d3dx`, source-map §7).
+//!   NOT glam's `from_rotation_arc` (see `math::d3dx`).
 //! - Static effects prune expired emitters; **dynamic effects never do**
 //!   (owner must delete) — do not "fix" this into always-pruning.
 
 use crate::data::{GameData, ParticleType};
 use crate::ids::{EffectDefId, EmitterTypeId, ParticleTypeId};
+use crate::math::intersect::{point_box, Box3};
 use crate::math::{sphere_coord, Rgba};
 use crate::math::d3dx;
 use crate::rng::GameRng;
@@ -169,59 +163,81 @@ impl Particle {
     }
 }
 
-/// Fixed-size arena with the original's linear replace-oldest-by-life-
-/// fraction allocation scan (PARITY — not a ring buffer/free-list, which
-/// would change which particle gets evicted under pressure).
+/// The `m_lpParticles` pool as a fixed 1024-slot arena.
+///
+/// PARITY deviation: the C++ list appends new particles at the back, so its
+/// iteration (render) order and eviction tie-break follow insertion order;
+/// here a new particle takes the lowest free slot and ties go to the lowest
+/// index. Which particle is evicted otherwise matches.
 pub struct ParticleArena {
-    pub slots: Vec<Option<Particle>>,
+    pub(crate) slots: Vec<Option<Particle>>,
+    live: usize,
+    /// Every slot below this index is occupied.
+    free_hint: usize,
 }
 
 impl ParticleArena {
     pub fn new() -> Self {
         Self {
             slots: (0..MAX_PARTICLES).map(|_| None).collect(),
+            live: 0,
+            free_hint: 0,
         }
     }
 
-    /// PARITY: `cOperationPurge::AddParticle` (reconstructed per design §7 /
-    /// source-map §7 "replace-oldest-by-life-fraction"). A single linear
-    /// scan picks the slot with the greatest life fraction: an empty slot
-    /// (`+inf`) wins, so free slots fill first (lowest index); when full,
-    /// the particle nearest death is evicted. Returns the chosen index.
+    /// PARITY: `cOperationPurge::AddParticle` (`cOperationPurge.cpp:1454-1483`).
+    /// Takes a free slot while below the cap; when full, replaces the first
+    /// particle with the greatest life fraction. Returns the chosen index.
     pub fn allocate(&mut self, particle: Particle) -> usize {
-        let mut best = 0usize;
-        let mut best_portion = f32::NEG_INFINITY;
-        for (i, slot) in self.slots.iter().enumerate() {
-            let portion = match slot {
-                None => f32::INFINITY,
-                Some(p) => p.lifetime_portion(),
-            };
-            if portion > best_portion {
-                best_portion = portion;
-                best = i;
+        let idx = if self.live < MAX_PARTICLES {
+            let idx = (self.free_hint..MAX_PARTICLES)
+                .find(|&i| self.slots[i].is_none())
+                .expect("live count below the cap implies a free slot");
+            self.live += 1;
+            self.free_hint = idx + 1;
+            idx
+        } else {
+            let mut oldest = 0;
+            let mut oldest_portion = self.portion(0);
+            for i in 1..MAX_PARTICLES {
+                let portion = self.portion(i);
+                if portion > oldest_portion {
+                    oldest = i;
+                    oldest_portion = portion;
+                }
             }
-        }
-        self.slots[best] = Some(particle);
-        best
+            oldest
+        };
+        self.slots[idx] = Some(particle);
+        idx
     }
 
-    /// Moves every live particle and frees slots whose particle expired.
-    /// This is the per-frame particle step (the original moved particles in
-    /// `MoveObjects`, `cOperationPurge.cpp:609`).
-    pub fn move_all(&mut self, dt: f32) {
-        for slot in self.slots.iter_mut() {
+    fn portion(&self, i: usize) -> f32 {
+        self.slots[i].as_ref().map_or(f32::INFINITY, Particle::lifetime_portion)
+    }
+
+    /// PARITY: the "Move particles" pass of `MoveObjects`
+    /// (`cOperationPurge.cpp:683-697`): move every particle, then drop it if
+    /// its life is over or it left `bounds` (the building box).
+    pub fn move_all(&mut self, dt: f32, bounds: Box3) {
+        for (i, slot) in self.slots.iter_mut().enumerate() {
             if let Some(p) = slot {
                 p.move_by(dt);
-                if p.is_life_expired() {
+                if p.is_life_expired() || !point_box(p.position, bounds) {
                     *slot = None;
+                    self.live -= 1;
+                    self.free_hint = self.free_hint.min(i);
                 }
             }
         }
     }
 
-    /// Number of occupied slots (test/inspection helper).
+    pub fn iter(&self) -> impl Iterator<Item = &Particle> {
+        self.slots.iter().flatten()
+    }
+
     pub fn live_count(&self) -> usize {
-        self.slots.iter().filter(|s| s.is_some()).count()
+        self.live
     }
 }
 
@@ -617,15 +633,47 @@ mod tests {
     #[test]
     fn arena_evicts_particle_nearest_death_when_full() {
         let mut arena = ParticleArena::new();
-        // Fill every slot; slot 7 is closest to death (highest fraction).
         for i in 0..MAX_PARTICLES {
             let frac = if i == 7 { 0.99 } else { 0.10 };
-            arena.slots[i] = Some(test_particle(frac, 1.0));
+            arena.allocate(test_particle(frac, 1.0));
         }
-        // The next allocation must evict slot 7.
         let idx = arena.allocate(test_particle(0.0, 1.0));
         assert_eq!(idx, 7);
         assert_eq!(arena.slots[7].as_ref().unwrap().lifetime, 0.0);
+        assert_eq!(arena.live_count(), MAX_PARTICLES);
+    }
+
+    #[test]
+    fn arena_refills_the_lowest_freed_slot() {
+        let mut arena = ParticleArena::new();
+        for _ in 0..4 {
+            arena.allocate(test_particle(0.5, 1.0));
+        }
+        arena.slots[2].as_mut().unwrap().lifetime = 1.0;
+        arena.slots[1].as_mut().unwrap().lifetime = 1.0;
+        arena.move_all(0.0, big_box());
+        assert_eq!(arena.live_count(), 2);
+        assert_eq!(arena.allocate(test_particle(0.0, 1.0)), 1);
+        assert_eq!(arena.allocate(test_particle(0.0, 1.0)), 2);
+        assert_eq!(arena.allocate(test_particle(0.0, 1.0)), 4);
+    }
+
+    #[test]
+    fn particles_outside_the_building_are_culled() {
+        let mut arena = ParticleArena::new();
+        let mut inside = test_particle(0.0, 1.0);
+        inside.position = Vec3::splat(1.0);
+        let mut outside = test_particle(0.0, 1.0);
+        outside.position = Vec3::new(1.0, 1.0, -1.0);
+        arena.allocate(inside);
+        arena.allocate(outside);
+        arena.move_all(0.0, Box3 { center: Vec3::splat(5.0), size: Vec3::splat(10.0) });
+        assert_eq!(arena.live_count(), 1);
+        assert!(arena.slots[0].is_some());
+    }
+
+    fn big_box() -> Box3 {
+        Box3 { center: Vec3::ZERO, size: Vec3::splat(1e6) }
     }
 
     // ---- fEmitRate delay / accumulation (design §6) ----

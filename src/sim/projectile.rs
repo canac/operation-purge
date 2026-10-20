@@ -173,6 +173,27 @@ impl Projectile {
         crate::sim::robot::f_max(0.0, opts.damage + rng.frand() * variance * 2.0 - variance)
     }
 
+    /// PARITY: `cProjectile::DisplayCollisionEffect` (`cProjectile.cpp:321-357`).
+    /// Returns the burst's `(position, velocity)`: the impact point and the
+    /// pre-step velocity with the hit plane's component flipped, or `None`
+    /// when the hit plane is invalid.
+    pub fn collision_effect_placement(&self) -> Option<(Vec3, Vec3)> {
+        let position = accelerate_point(
+            self.collided.ntr.time,
+            self.trajectory.start,
+            self.trajectory.direction,
+            self.trajectory.gravity,
+        );
+        let mut direction = self.trajectory.direction;
+        match self.collided.ntr.plane.axis {
+            PlaneAxis::X => direction.x = -direction.x,
+            PlaneAxis::Y => direction.y = -direction.y,
+            PlaneAxis::Z => direction.z = -direction.z,
+            PlaneAxis::Invalid => return None,
+        }
+        Some((position, direction))
+    }
+
     /// PARITY: `cProjectile::DisplayHole` position/orientation
     /// (`cProjectile.cpp:237-300`). Returns `(position, outward_normal)`, or
     /// `None` when the collision plane is invalid (not a wall hit).

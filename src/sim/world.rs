@@ -26,7 +26,7 @@
 use crate::data::{GameData, RobotType};
 use crate::ids::{CenterId, EffectDefId, GameDefId, RobotId, TeamId};
 use crate::maze::building::{Building, WallDir};
-use crate::math::intersect::{rect_rect, Rect};
+use crate::math::intersect::{rect_rect, Box3, Rect};
 use crate::rng::GameRng;
 use crate::sim::ai::AiRuntime;
 use crate::sim::center::{Center, CenterKind, Orientation};
@@ -298,12 +298,14 @@ impl World {
             }
         }
 
-        // M9: move + expire particles (the original stepped particles here
-        // in MoveObjects). No RNG/data needed — kinematics live on each
-        // particle; expired slots are freed.
         {
             crate::profile_scope!("Move particles");
-            self.particles.move_all(dt);
+            let size = self.building.size();
+            let bounds = Box3 {
+                center: size * 0.5,
+                size,
+            };
+            self.particles.move_all(dt, bounds);
         }
 
         // Move projectiles + resolve hits (`cOperationPurge.cpp:702-736`).
@@ -439,21 +441,8 @@ impl World {
             phi,
             initial_speed,
         );
-        // M9: fire effect — a static burst at the muzzle carrying the
-        // muzzle velocity (so a relative emit cone points down-barrel).
-        if let Some(def) = fire_effect {
-            let eff = ParticleEffect::new(
-                &self.game_data,
-                def,
-                false,
-                proj.position,
-                proj.velocity,
-                &mut self.rng,
-            );
-            self.effects.push(eff);
-        }
-        // M9: travel effect — a dynamic trail that follows the projectile
-        // (never self-prunes; dropped with the projectile on destroy).
+        // PARITY: the travel effect is created in the `cProjectile` ctor,
+        // before `AddProjectile` plays the fire sound and fire effect.
         if let Some(def) = travel_effect {
             proj.travel_effect = Some(ParticleEffect::new(
                 &self.game_data,
@@ -468,6 +457,7 @@ impl World {
             kind: SoundKind::Fire(projectile_type),
             origin: proj.position,
         });
+        self.spawn_burst_effect(fire_effect, proj.position, proj.velocity);
         self.projectiles.push(proj);
     }
 
@@ -577,23 +567,11 @@ impl World {
             proj.intersect_building(ntr);
 
             let collision = proj.collision();
-            // M9: the impact point (on the swept segment) + the projectile's
-            // velocity there, for the collision burst effect.
-            let impact = crate::math::accelerate_point(
-                collision.ntr.time,
-                proj.trajectory.start,
-                proj.trajectory.direction,
-                proj.trajectory.gravity,
-            );
-            let impact_vel = proj.velocity;
-            if collision.kind != CollisionKind::None {
-                self.sound_events.push(SoundEvent {
-                    kind: SoundKind::Collision(proj.projectile_type),
-                    origin: proj.position,
-                });
-            }
             match collision.kind {
-                CollisionKind::None => survivors.push(proj),
+                CollisionKind::None => {
+                    survivors.push(proj);
+                    continue;
+                }
                 CollisionKind::Robot => {
                     if let Some(rid) = collision.robot_id {
                         let damage = proj.get_damage(&self.game_data, &mut self.rng);
@@ -601,16 +579,10 @@ impl World {
                             r.projectile_hit(damage);
                         }
                     }
-                    // M9: collision burst. The projectile (with its trail) is
-                    // dropped here — the dynamic trail dies with its owner.
-                    self.spawn_burst_effect(collision_effect, impact, impact_vel);
                 }
                 CollisionKind::Wall => {
-                    // DisplayHole (`cProjectile.cpp:237-300`).
                     if let Some((position, normal)) = proj.hole_placement() {
-                        let size = self.game_data.projectile_types
-                            [proj.projectile_type.get() as usize]
-                            .hole_size;
+                        let size = self.game_data.projectile_types[idx].hole_size;
                         let rotation = self.rng.frand() * crate::math::d3dx::D3DX_PI * 2.0;
                         self.holes.push(Hole {
                             position,
@@ -619,10 +591,16 @@ impl World {
                             size,
                         });
                     }
-                    // M9: collision burst; the projectile is destroyed.
-                    self.spawn_burst_effect(collision_effect, impact, impact_vel);
                 }
             }
+            self.sound_events.push(SoundEvent {
+                kind: SoundKind::Collision(proj.projectile_type),
+                origin: proj.position,
+            });
+            if let Some((position, velocity)) = proj.collision_effect_placement() {
+                self.spawn_burst_effect(collision_effect, position, velocity);
+            }
+            // Dropping the projectile drops its travel effect with it.
         }
 
         self.projectiles = survivors;
@@ -645,30 +623,23 @@ impl World {
     /// win/lose accounting in `GetGameStatus` treats it as dead either
     /// way). PlayDestroySound is an M10 hook; the destroy effect is M9.
     fn remove_destroyed_robots(&mut self) {
-        // M9: collect each dead robot's destroy effect (at its 3D center,
-        // carrying its 2D velocity) before removal.
-        let mut bursts: Vec<(EffectDefId, Vec3, Vec3)> = Vec::new();
-        for r in self.robots.values() {
-            if r.is_dead() {
-                self.sound_events.push(SoundEvent {
-                    kind: SoundKind::Destroy,
-                    origin: Vec3::new(r.position.x, r.position.y, 0.0),
-                });
-                if let Some(def) =
-                    self.game_data.robot_types[r.robot_type.get() as usize].destroy_effect
-                {
-                    let vel = r.velocity();
-                    bursts.push((
-                        def,
-                        Vec3::new(r.position.x, r.position.y, crate::sim::robot::ROBOT_CENTER_Z),
-                        Vec3::new(vel.x, vel.y, 0.0),
-                    ));
-                }
-            }
-        }
-        self.robots.retain(|_, r| !r.is_dead());
-        for (def, position, velocity) in bursts {
-            self.spawn_burst_effect(Some(def), position, velocity);
+        let dead: Vec<RobotId> = self
+            .robots
+            .iter()
+            .filter(|(_, r)| r.is_dead())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in dead {
+            let r = self.robots.remove(&id).expect("collected from the map");
+            self.sound_events.push(SoundEvent {
+                kind: SoundKind::Destroy,
+                origin: Vec3::new(r.position.x, r.position.y, 0.0),
+            });
+            // PARITY: `cRobot::DisplayDestroyEffect` (`cRobot.cpp:419-423`)
+            // emits from the robot's center with zero velocity.
+            let def = self.game_data.robot_types[r.robot_type.get() as usize].destroy_effect;
+            let center = Vec3::new(r.position.x, r.position.y, crate::sim::robot::ROBOT_CENTER_Z);
+            self.spawn_burst_effect(def, center, Vec3::ZERO);
         }
     }
 
