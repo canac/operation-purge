@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 static ASSETS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets");
 
-/// Records which build last unpacked into a directory.
+/// Records which asset content last unpacked into a directory.
 const STAMP: &str = ".version";
 
 /// Where unpacked assets live when none sit beside the exe or in the
@@ -19,10 +19,11 @@ pub fn default_unpack_dir() -> Option<PathBuf> {
 
 /// Unpacks the embedded assets into `dest`. Missing files are always
 /// written; existing files are overwritten only when `dest` was unpacked
-/// by a different version, so user-added mazes survive every run and
-/// user edits survive until an upgrade.
+/// from different asset content (the `build.rs` hash of `assets/`), so
+/// user-added mazes survive every run and user edits survive until the
+/// shipped assets change.
 pub fn ensure_unpacked(dest: &Path) -> std::io::Result<()> {
-    unpack(&ASSETS, dest, env!("CARGO_PKG_VERSION"))
+    unpack(&ASSETS, dest, env!("ASSETS_HASH"))
 }
 
 fn unpack(src: &Dir, dest: &Path, version: &str) -> std::io::Result<()> {
