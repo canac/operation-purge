@@ -54,7 +54,6 @@ walkdir = "2.5.0"
 winit = "0.30.13"
 
 [dev-dependencies]
-insta = "1.48.0"
 proptest = "1.11.0"
 
 [build-dependencies]

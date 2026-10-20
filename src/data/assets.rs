@@ -40,15 +40,21 @@ pub mod names {
     pub const ROCKET_COLLISION_SOUND: &str = "RocketCollision.wav";
     pub const DESTROY_SOUND: &str = "Destroy.wav";
 
+    /// The projectile type the Rocket assets belong to. `GameData.toml`
+    /// loading rejects data where `projectile_types[ROCKET_INDEX]` isn't
+    /// named [`ROCKET_NAME`].
+    pub const ROCKET_INDEX: usize = 1;
+    pub const ROCKET_NAME: &str = "Rocket";
+
     /// The projectile sprite for a projectile type index (Bullet, Rocket,
     /// Better Bullet); `None` = not drawn (`cProjectile::Render`).
     pub fn projectile_texture(type_index: usize) -> Option<&'static str> {
-        (type_index != 1).then_some(PROJECTILE_TEXTURE)
+        (type_index != ROCKET_INDEX).then_some(PROJECTILE_TEXTURE)
     }
 
     /// `(fire, collision)` sounds for a projectile type index.
     pub fn projectile_sounds(type_index: usize) -> (&'static str, &'static str) {
-        if type_index == 1 {
+        if type_index == ROCKET_INDEX {
             (ROCKET_FIRE_SOUND, ROCKET_COLLISION_SOUND)
         } else {
             (BULLET_FIRE_SOUND, BULLET_COLLISION_SOUND)
