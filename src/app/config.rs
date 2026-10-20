@@ -1,11 +1,10 @@
-//! User preferences (design §4.5), replacing `cRegistry`'s HKCU values.
+//! User preferences, replacing `cRegistry`'s HKCU values.
 //!
 //! Stored as TOML at `dirs::config_dir()/operation-purge/config.toml`.
 //! Every key is optional; a missing key silently falls back to its
-//! default — this reproduces the original's "registry read failure ⇒
-//! dialog default" semantics (libs-map §4, "Prefs are read at dialog
-//! open... missing values fail silently"). The file is written only on
-//! New Game accept (design §5.5), never eagerly.
+//! default, as a failed registry read fell back to the dialog default
+//! (`cMainWindow.cpp:647-673`). The file is written only on New Game
+//! accept, never eagerly.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -26,7 +25,7 @@ fn default_mouse_scale() -> f32 {
     1.0
 }
 
-/// TOML-backed config; see design §4.5 for the annotated schema.
+/// TOML-backed config.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -35,29 +34,30 @@ pub struct Config {
     /// overridable by `--assets` / `OP_ASSETS`.
     pub assets_dir: String,
 
-    /// May hold a glob pattern (libs-map §4, "Wildcard maze selection");
-    /// the *pattern* is persisted, never the resolved file.
+    /// May hold a wildcard pattern; the *pattern* is persisted, never the
+    /// resolved file (`cMainWindow.cpp:770`).
     pub maze_file: String,
 
     pub game_index: u32,
     pub team_index: u32,
 
-    /// Default `true` (design §1.4.5 / §1.5.7): the 2011 unthrottled loop
-    /// is opt-in via `vsync = false`, not the default.
+    /// Default `true`: the 2011 unthrottled loop is opt-in via
+    /// `vsync = false`.
     pub vsync: bool,
 
-    /// `None` = uncapped; only meaningful with `vsync = false`.
+    /// Frames per second ceiling while focused; `None` or `0` = uncapped
+    /// (vsync, when on, still paces the loop).
     pub fps_cap: Option<u32>,
 
     /// Multiplies raw mouse deltas; default 1.0. Needed because raw
-    /// delta units differ per platform (design §1.4.13: macOS deltas are
-    /// NSEvent counts, not physical pixels).
+    /// delta units differ per platform (macOS reports NSEvent counts, not
+    /// physical pixels).
     pub mouse_scale: f32,
 
     /// `None` = use the monitor's DPI scale factor.
     pub hud_scale: Option<f32>,
 
-    /// `None` = time-seeded (see `rng::GameRng::from_time`).
+    /// `None` = seeded from the wall clock at launch and at each new game.
     pub seed: Option<u64>,
 }
 
@@ -86,16 +86,18 @@ impl Config {
         dirs::config_dir().map(|d| d.join("operation-purge").join("config.toml"))
     }
 
-    /// Missing file or parse failure both fall back to `Config::default()`
-    /// (registry-semantics parity — libs-map §4).
+    /// Missing file or parse failure both fall back to `Config::default()`,
+    /// like a failed registry read.
     pub fn load() -> Self {
-        let Some(path) = Self::path() else {
-            return Self::default();
-        };
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            return Self::default();
-        };
-        toml::from_str(&text).unwrap_or_default()
+        Self::path().map(|p| Self::load_from(&p)).unwrap_or_default()
+    }
+
+    /// [`load`](Self::load) from an explicit path.
+    pub fn load_from(path: &std::path::Path) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| toml::from_str(&text).ok())
+            .unwrap_or_default()
     }
 
     /// Fold an accepted New Game selection into the config (the registry
@@ -107,11 +109,8 @@ impl Config {
         self.team_index = params.team_idx;
     }
 
-    /// Written only on New Game accept (design §5.5), never eagerly.
-    pub fn save(&self) -> std::io::Result<()> {
-        let Some(path) = Self::path() else {
-            return Ok(());
-        };
+    /// Write the config to `path`, creating its directory.
+    pub fn save_to(&self, path: &std::path::Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

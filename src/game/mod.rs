@@ -394,9 +394,8 @@ impl Game {
     }
 
     /// Resolve a `Confirm` modal choice. Resume / KeepWatching / Restart are
-    /// applied here; NewGame / Exit are returned for the app to handle
-    /// (they need the window + renderers). Returns `ConfirmAction::None` when
-    /// no modal is up.
+    /// applied here; NewGame is returned for the app to open its screen.
+    /// Returns `ConfirmAction::None` when no modal is up.
     pub fn resolve_confirm(&mut self, choice: ConfirmChoice) -> screens::ConfirmAction {
         use screens::ConfirmAction;
         let Some(kind) = self.confirm_kind() else {
@@ -418,8 +417,7 @@ impl Game {
             ConfirmAction::NewGame => {
                 self.screen = self.confirm_return.take().unwrap_or(Screen::Play3D);
             }
-            // Exit / None: the app quits.
-            _ => {}
+            ConfirmAction::None => {}
         }
         action
     }

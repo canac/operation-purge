@@ -1,11 +1,9 @@
-//! App-state machine (design §5.5), replacing the original's modal
-//! dialogs (`NewGameDlgProc`, `MessageBox` call sites) with in-engine
-//! screens rendered through `render::overlay` + `render::text` — one
-//! render path, no second UI stack (design §3.6).
+//! Game screens, replacing the original's modal `MessageBox` call sites
+//! with in-engine screens.
 //!
-//! FIX (design §1.3): the original blocked inside `MessageBox` mid-frame;
-//! the port replaces every such site with a non-blocking `Confirm` screen
-//! (the sim is frozen and sounds are stopped **first**, ordering preserved).
+//! FIX: the original blocked inside `MessageBox` mid-frame; the port
+//! replaces every such site with a non-blocking `Confirm` screen (the sim is
+//! frozen and sounds are stopped **first**, ordering preserved).
 
 /// Which field has focus in the New Game screen's text entry.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -34,7 +32,7 @@ impl GameOverKind {
     }
 }
 
-/// The four confirmation modals (design §5.5), one per `MessageBox` site.
+/// The confirmation modals, one per gameplay `MessageBox` site.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ConfirmKind {
     /// F4 (`commandRestart`): "quit the current game?" → restart the same
@@ -46,9 +44,6 @@ pub enum ConfirmKind {
     /// A team won/lost/all-destroyed: replay / new game / keep watching
     /// (`cOperationPurge.cpp:1391-1414`).
     GameOver(GameOverKind),
-    /// A fatal error arrived via the errorlog channel: exit? / dismiss
-    /// (`cMainWindow.cpp:799-810`).
-    InternalError,
 }
 
 /// A choice made on a `Confirm` modal (Y/N/C keys or click).
@@ -70,8 +65,6 @@ pub enum ConfirmAction {
     Resume,
     /// Keep watching after game over (`m_bIgnoreGameEnd = true`).
     KeepWatching,
-    /// Quit the program.
-    Exit,
     /// The choice is not offered by this modal (ignored).
     None,
 }
@@ -85,9 +78,6 @@ impl ConfirmKind {
             }
             ConfirmKind::GameOver(kind) => {
                 format!("{}\nWould you like to play the last game again?", kind.message())
-            }
-            ConfirmKind::InternalError => {
-                "An internal error occurred.\n\nDo you want to exit the program?".to_string()
             }
         }
     }
@@ -114,27 +104,18 @@ impl ConfirmKind {
             (ConfirmKind::GameOver(_), ConfirmChoice::Yes) => ConfirmAction::Restart,
             (ConfirmKind::GameOver(_), ConfirmChoice::No) => ConfirmAction::NewGame,
             (ConfirmKind::GameOver(_), ConfirmChoice::Cancel) => ConfirmAction::KeepWatching,
-
-            // Internal error (`cMainWindow.cpp:806-809`): Yes exits, No dismisses.
-            (ConfirmKind::InternalError, ConfirmChoice::Yes) => ConfirmAction::Exit,
-            (ConfirmKind::InternalError, _) => ConfirmAction::Resume,
         }
     }
 }
 
-/// The app's top-level screen/mode (design §5.5). PARITY: empty New Game
-/// password **enables** cheats (`cMainWindow.cpp:760-761`); 2D-map arrow
-/// pan is inverted (down = Up); Cancel at startup exits, Cancel mid-game
-/// resumes.
-///
-/// PARITY note: the live New Game screen is driven by `AppRunner.new_game:
-/// Option<NewGame>` (app/mod.rs), *not* a `Screen` variant — so `Screen` has
-/// no `NewGame` case.
+/// The running game's screen. The New Game screen is the app's
+/// `Option<NewGame>`, not a variant here, because it can sit over a frozen
+/// game.
 #[derive(Clone, Debug)]
 pub enum Screen {
     Map2D { forced_by_death: bool },
     Play3D,
-    /// The free observer-point camera (`observerPoint`, design §5.5).
+    /// The free observer-point camera (`observerPoint`).
     Observer,
     Confirm {
         kind: ConfirmKind,
@@ -168,14 +149,6 @@ mod tests {
         assert_eq!(k.resolve(ConfirmChoice::No), ConfirmAction::NewGame);
         assert_eq!(k.resolve(ConfirmChoice::Cancel), ConfirmAction::KeepWatching);
         assert!(k.prompt().contains("Your team won!"));
-    }
-
-    #[test]
-    fn internal_error_modal_only_exits_on_yes() {
-        let k = ConfirmKind::InternalError;
-        assert_eq!(k.resolve(ConfirmChoice::Yes), ConfirmAction::Exit);
-        assert_eq!(k.resolve(ConfirmChoice::No), ConfirmAction::Resume);
-        assert!(k.prompt().contains("internal error"));
     }
 
     #[test]

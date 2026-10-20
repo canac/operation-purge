@@ -24,8 +24,9 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use winit::event::MouseButton;
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::KeyCode;
 
+use super::shell::Shell;
 use crate::input::keys::Key;
 
 /// A key-ish input target: keyboard key or mouse button.
@@ -182,8 +183,70 @@ impl Driver {
     }
 }
 
-pub fn physical(code: KeyCode) -> PhysicalKey {
-    PhysicalKey::Code(code)
+/// A plain-text snapshot of the app + game for E2E assertions. `audio` is
+/// the audio pass's debug line, `None` when muted.
+pub fn state_dump(shell: &Shell, audio: Option<String>) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(out, "new_game_open={}", shell.new_game.is_some());
+    let _ = writeln!(out, "init_error={:?}", shell.init_error);
+    if let Some(ng) = shell.new_game.as_ref() {
+        let _ = writeln!(
+            out,
+            "new_game pattern={:?} matches={} game={} team={} password_len={}",
+            ng.pattern,
+            ng.match_count(),
+            ng.game_idx,
+            ng.team_idx,
+            ng.password.chars().count()
+        );
+    }
+    let Some(g) = shell.game.as_ref() else {
+        let _ = writeln!(out, "game=none");
+        return out;
+    };
+    let w = &g.world;
+    let _ = writeln!(out, "screen={:?}", g.screen);
+    let _ = writeln!(out, "confirm={:?}", g.confirm_kind());
+    let _ = writeln!(out, "observer_type={:?}", g.observer_type);
+    let _ = writeln!(out, "active_robot={:?}", g.active_robot);
+    let _ = writeln!(out, "active_is_enemy={}", g.active_is_enemy);
+    let _ = writeln!(out, "cheats_enabled={}", g.cheats_enabled);
+    let _ = writeln!(out, "game_speed={:.3}", g.game_speed);
+    let _ = writeln!(out, "game_time={:.3}", w.game_time);
+    let _ = writeln!(out, "show_map={}", g.show_map);
+    let _ = writeln!(out, "map_center={:?} map_size={:?}", g.map_center, g.map_size);
+    let _ = writeln!(out, "cursor_win={:?} cursor_world={:?}", g.cursor_win, g.win_to_log(g.cursor_win));
+    let _ = writeln!(out, "status={:?}", w.status());
+    let _ = writeln!(out, "robots_alive={}", w.robots.values().filter(|r| !r.is_dead()).count());
+    let _ = writeln!(out, "projectiles={}", w.projectiles.len());
+    let _ = writeln!(out, "particles={}", w.particles.live_count());
+    let _ = writeln!(out, "holes={}", w.holes.entries.len());
+    let _ = writeln!(out, "effects={}", w.effects.len());
+    for (id, r) in w.robots.iter() {
+        let _ = writeln!(
+            out,
+            "robot {:?} team={} dead={} pos=({:.2},{:.2}) dir={:.2} health={:.1}/{:.1}",
+            id,
+            r.team.get(),
+            r.is_dead(),
+            r.position.x,
+            r.position.y,
+            r.direction,
+            r.health,
+            r.health_start
+        );
+    }
+    match audio {
+        Some(line) => {
+            let _ = writeln!(out, "audio=on {line}");
+        }
+        None => {
+            let _ = writeln!(out, "audio=off");
+        }
+    }
+    let _ = writeln!(out, "--- hud ---\n{}", g.status_text());
+    out
 }
 
 #[cfg(test)]

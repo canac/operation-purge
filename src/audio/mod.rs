@@ -8,6 +8,7 @@
 //! [`SoundBackend`] trait so tests use a fake and only the app opens a
 //! device via [`KiraBackend`].
 
+pub mod game_audio;
 pub mod spatial;
 pub mod voice;
 
@@ -386,12 +387,16 @@ fn map_hound_err(path: &Path, err: hound::Error) -> AudioError {
     }
 }
 
+/// Play failures logged individually before the rest are only counted.
+const LOGGED_PLAY_FAILURES: u32 = 5;
+
 /// The real [`SoundBackend`], backed by kira. Only the app constructs it,
 /// since `new` opens the default output device.
 pub struct KiraBackend {
     manager: kira::AudioManager<kira::DefaultBackend>,
     /// Indexed by `ClipId`.
     clips: Vec<kira::sound::static_sound::StaticSoundData>,
+    play_failures: u32,
 }
 
 impl KiraBackend {
@@ -408,7 +413,19 @@ impl KiraBackend {
         Ok(Self {
             manager,
             clips: Vec::new(),
+            play_failures: 0,
         })
+    }
+}
+
+impl Drop for KiraBackend {
+    fn drop(&mut self) {
+        if self.play_failures > LOGGED_PLAY_FAILURES {
+            crate::log_error!(
+                "audio: {} more clip play failures were not logged",
+                self.play_failures - LOGGED_PLAY_FAILURES
+            );
+        }
     }
 }
 
@@ -430,7 +447,10 @@ impl SoundBackend for KiraBackend {
         match self.manager.play(data) {
             Ok(handle) => Some(handle),
             Err(e) => {
-                crate::log_error!("audio: could not play clip {}: {e}", clip.0);
+                self.play_failures += 1;
+                if self.play_failures <= LOGGED_PLAY_FAILURES {
+                    crate::log_error!("audio: could not play clip {}: {e}", clip.0);
+                }
                 None
             }
         }

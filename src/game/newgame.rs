@@ -1,7 +1,5 @@
-//! New Game screen logic (design §5.5), replacing the Win32
-//! `NewGameDlgProc` (`cMainWindow.cpp:592-789`) with an in-engine screen
-//! rendered through `render::overlay` + `render::text` — one render path,
-//! no second UI stack (design §3.6).
+//! New Game screen logic, replacing the Win32 `NewGameDlgProc`
+//! (`cMainWindow.cpp:592-789`) with an in-engine text screen.
 //!
 //! The screen holds a maze **pattern** field (whose live match count is
 //! recomputed via the legacy wildcard matcher on every edit — the
@@ -10,7 +8,7 @@
 //! `CBN_SELCHANGE` handler), and a **password** field.
 //!
 //! PARITY: an EMPTY password **enables** cheats — any non-empty text
-//! disables them (`cMainWindow.cpp:760-761`, design §1.3). This polarity is
+//! disables them (`cMainWindow.cpp:760-761`). This polarity is
 //! the opposite of what a naive reading suggests, so it is pinned by a test.
 
 use std::path::{Path, PathBuf};
@@ -40,16 +38,15 @@ pub struct NewGameParams {
     /// The randomly-picked matching maze file (absolute path).
     pub maze_path: PathBuf,
     /// The *pattern* is persisted, never the resolved file
-    /// (`cMainWindow.cpp:770`, design §4.5).
+    /// (`cMainWindow.cpp:770`).
     pub pattern: String,
     pub game_idx: u32,
     pub team_idx: u32,
     pub cheats_enabled: bool,
 }
 
-/// What pressing OK / Cancel on the New Game screen resolves to. The app
-/// (or a headless test) dispatches on this — no mid-frame modal dialog
-/// (FIX: no Win32 `DialogBox`, design §1.3).
+/// What pressing OK / Cancel on the New Game screen resolves to; the app
+/// dispatches on it instead of returning from a Win32 `DialogBox`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum NewGameOutcome {
     /// OK with ≥1 matching maze: start the game with these params.
@@ -61,7 +58,7 @@ pub enum NewGameOutcome {
     /// Cancel **at startup** (no game running): quit the app
     /// (`cMainWindow.cpp:105` — `NewGame()` failing exits).
     CancelExit,
-    /// Cancel **mid-game**: resume the paused game (design §5.5).
+    /// Cancel **mid-game**: resume the paused game.
     CancelResume,
 }
 
@@ -74,8 +71,8 @@ pub struct NewGame {
     pub game_idx: u32,
     pub team_idx: u32,
     pub focus: Field,
-    /// PARITY: Cancel behaviour differs by whether a game is already running
-    /// (design §5.5): startup ⇒ exit, mid-game ⇒ resume.
+    /// PARITY: Cancel behaviour differs by whether a game is already running:
+    /// startup ⇒ exit, mid-game ⇒ resume.
     pub invoked_mid_game: bool,
     /// The resolved matches from the last [`refresh_matches`](Self::refresh_matches)
     /// (the `vszMazeFiles` static, `cMainWindow.cpp:598`). `IDOK` random-picks
@@ -98,6 +95,19 @@ impl NewGame {
             invoked_mid_game,
             matches: Vec::new(),
         }
+    }
+
+    /// GUARD: pull persisted indices into range for `data`; the original's
+    /// combos just showed no selection for an out-of-range registry value
+    /// (`cMainWindow.cpp:659-670`).
+    pub fn clamp_selection(&mut self, data: &GameData) {
+        let n_games = data.game_definitions.len() as u32;
+        if n_games == 0 {
+            return;
+        }
+        self.game_idx = self.game_idx.min(n_games - 1);
+        let n_teams = self.team_count(data) as u32;
+        self.team_idx = self.team_idx.min(n_teams.saturating_sub(1));
     }
 
     /// PARITY: empty password ⇒ cheats on (`cMainWindow.cpp:760-761`).
@@ -224,7 +234,7 @@ impl NewGame {
     }
 
     /// `IDCANCEL` (`cMainWindow.cpp:783-787`): quit at startup, resume
-    /// mid-game (design §5.5).
+    /// mid-game.
     pub fn cancel(&self) -> NewGameOutcome {
         if self.invoked_mid_game {
             NewGameOutcome::CancelResume
@@ -253,11 +263,36 @@ pub fn resolve_matches(assets_dir: &Path, pattern: &str) -> Vec<PathBuf> {
     matches
 }
 
-/// Live match count for the pattern, resolved against `assets_dir`
-/// (`UpdatePatternInfo` return, `cMainWindow.cpp:1160-1164`). Kept as a free
-/// function for callers/tests that only need the count.
-pub fn update_pattern_info(pattern: &str, assets_dir: &Path) -> usize {
-    resolve_matches(assets_dir, pattern).len()
+/// The New Game screen's text: pattern + live count, game/team combos,
+/// password, and the focus marker (the dialog's controls).
+pub fn screen_text(ng: &NewGame, data: Option<&GameData>) -> String {
+    let game = data.and_then(|d| d.game_definitions.get(ng.game_idx as usize));
+    let game_name = game.map(|g| g.name.as_str()).unwrap_or("<none>");
+    let team_name = game
+        .and_then(|g| g.teams.get(ng.team_idx as usize))
+        .map(|t| t.name.as_str())
+        .unwrap_or("<none>");
+    let marker = |field| if ng.focus == field { ">" } else { " " };
+    let pat_focus = marker(Field::Pattern);
+    let pw_focus = marker(Field::Password);
+    let stars = "*".repeat(ng.password.chars().count());
+    let count = ng.match_count();
+    let plural = if count == 1 { "" } else { "s" };
+    format!(
+        "OPERATION PURGE — New Game\n\
+         \n\
+         {pat_focus} Maze pattern: {}\n\
+            Pattern matches {count} file{plural}\n\
+         \n\
+           Game (Left/Right): {game_name}\n\
+           Team (Left/Right): {team_name}\n\
+         \n\
+         {pw_focus} Password: {stars}\n\
+         \n\
+         [Tab] switch field   [Enter] OK   [Esc] Cancel\n\
+         (empty password enables cheats)",
+        ng.pattern,
+    )
 }
 
 #[cfg(test)]
@@ -288,14 +323,14 @@ mod tests {
     fn pattern_matches_the_shipped_mazes() {
         // The shipped pool is the full original set recovered from the MSI:
         // Big1/2, BigBlank, BigRandom, Small1..Small15, SmallBlank, SmallRandom.
-        let n = update_pattern_info("MazeFiles/*.maz", &assets());
+        let n = resolve_matches(&assets(), "MazeFiles/*.maz").len();
         assert_eq!(n, 21, "all shipped .maz files should match the default glob");
     }
 
     #[test]
     fn pattern_narrows_the_match_count() {
-        assert_eq!(update_pattern_info("MazeFiles/Small1.maz", &assets()), 1);
-        assert_eq!(update_pattern_info("MazeFiles/DoesNotExist*.maz", &assets()), 0);
+        assert_eq!(resolve_matches(&assets(), "MazeFiles/Small1.maz").len(), 1);
+        assert_eq!(resolve_matches(&assets(), "MazeFiles/DoesNotExist*.maz").len(), 0);
     }
 
     #[test]
@@ -371,6 +406,15 @@ mod tests {
         assert_eq!(ng.team_idx as usize, n_teams - 1);
         ng.cycle_team(-100, &d);
         assert_eq!(ng.team_idx, 0);
+    }
+
+    #[test]
+    fn out_of_range_persisted_indices_clamp_to_the_data() {
+        let d = data();
+        let mut ng = NewGame::new(String::new(), 999, 999, false);
+        ng.clamp_selection(&d);
+        assert_eq!(ng.game_idx as usize, d.game_definitions.len() - 1);
+        assert_eq!(ng.team_idx as usize, ng.team_count(&d) - 1);
     }
 
     #[test]
