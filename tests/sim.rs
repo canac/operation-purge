@@ -24,28 +24,19 @@ use std::path::Path;
 // synthetic fixtures
 // --------------------------------------------------------------------
 
-fn robot_type(
-    accel: f32,
-    brake_decel: f32,
-    friction_decel: f32,
-    max_speed: f32,
-    energy_start: f32,
-    health_start: f32,
-    crash_armor: f32,
-    projectile_data: Vec<ProjectileData>,
-) -> RobotType {
+fn robot_type(friction_decel: f32, projectile_data: Vec<ProjectileData>) -> RobotType {
     RobotType {
         name: "Test".into(),
-        accel,
-        brake_decel,
+        accel: 10.0,
+        brake_decel: 25.0,
         friction_decel,
-        max_speed,
+        max_speed: 100.0,
         rotate_rate: 0.0,
         max_visible_dist: 50.0,
-        energy_start,
-        health_start,
+        energy_start: 1000.0,
+        health_start: 5.0,
         projectile_armor: 1.0,
-        crash_armor,
+        crash_armor: 25.0,
         destroy_effect: None,
         projectile_data,
     }
@@ -64,7 +55,7 @@ fn two_phase_movement_matches_hand_trace() {
     // accel=10, no friction, desired=100, dt=0.1, heading +X.
     // GetMoveAccel(Accelerate): robot_accel clamps to accel*dt = 1.0 each
     // frame; distance = speed*dt + 0.5*accel*dt^2.
-    let rt = robot_type(10.0, 25.0, 0.0, 100.0, 1000.0, 5.0, 25.0, vec![]);
+    let rt = robot_type(0.0, vec![]);
     let mut r = make_robot(&rt);
     r.accelerate(100.0); // desired_speed -> 100
 
@@ -91,7 +82,7 @@ fn two_phase_movement_matches_hand_trace() {
 fn cruise_friction_decays_speed() {
     // friction_decel=1, cruise, speed 10, dt 0.1: friction = -0.1,
     // distance = 10*0.1 + 0.5*(-0.1)*0.01 = 0.9995, speed -> 9.9.
-    let rt = robot_type(10.0, 25.0, 1.0, 100.0, 1000.0, 5.0, 25.0, vec![]);
+    let rt = robot_type(1.0, vec![]);
     let mut r = make_robot(&rt);
     r.set_move_state(Throttle::Cruise);
     r.speed = 10.0;
@@ -107,7 +98,7 @@ fn cruise_friction_decays_speed() {
 
 #[test]
 fn add_collision_truncates_by_offset_over_move_component() {
-    let rt = robot_type(10.0, 25.0, 0.0, 100.0, 1000.0, 5.0, 25.0, vec![]);
+    let rt = robot_type(0.0, vec![]);
     let mut r = make_robot(&rt);
     r.move_vec = Vec2::new(1.0, 0.0);
     r.collision_time = 1.0;
@@ -140,7 +131,7 @@ fn add_collision_truncates_by_offset_over_move_component() {
 fn crash_damage_impulse_against_wall() {
     // Wall crash (other velocity 0): force = |v.v / speed| = speed.
     // health 5 - 10/25 = 4.6; speed zeroed.
-    let rt = robot_type(10.0, 25.0, 0.0, 100.0, 1000.0, 5.0, 25.0, vec![]);
+    let rt = robot_type(0.0, vec![]);
     let mut r = make_robot(&rt);
     r.speed = 10.0;
     r.direction = 0.0;
@@ -180,7 +171,7 @@ fn fire_scatter_phi_stays_clamped() {
         fire_rate: 0.0, // always ready
         accuracy: 10.0, // huge scatter (radians) to force the clamp
     }];
-    let rt = robot_type(10.0, 25.0, 0.0, 100.0, 1000.0, 5.0, 25.0, pd);
+    let rt = robot_type(0.0, pd);
     let mut rng = GameRng::from_seed(12345);
 
     // Repeatedly fire from the clamp boundary; barrel elevation must never
@@ -218,7 +209,7 @@ fn fire_and_restock_type_pick_last_matching_entry() {
             accuracy: 0.0,
         },
     ];
-    let rt = robot_type(10.0, 25.0, 0.0, 100.0, 1000.0, 5.0, 25.0, pd);
+    let rt = robot_type(0.0, pd);
     let r = make_robot(&rt);
 
     // Both ready -> the LAST ready entry wins.
@@ -293,7 +284,7 @@ fn unlisted_ammo_rate_yields_infinite_fill() {
         fire_rate: 0.2,
         accuracy: 0.0,
     }];
-    let rt = robot_type(10.0, 25.0, 0.0, 100.0, 1000.0, 5.0, 25.0, pd);
+    let rt = robot_type(0.0, pd);
     let mut r = make_robot(&rt);
     // Spend some ammo, then flood it.
     r.increase_ammo(ProjectileTypeId(0), -100.0); // 500 -> 400

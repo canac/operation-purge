@@ -273,6 +273,11 @@ mod tests {
         }
     }
 
+    /// Index of the wall on the left edge of room `(x, y)` in `v_walls`.
+    fn v_wall_index(x: usize, y: usize, cx: usize) -> usize {
+        y * (cx + 1) + x
+    }
+
     /// A fully-connected `cx x cy` maze with only the outer border walled
     /// (a "perfect open field"): every interior room is reachable from every
     /// other, so the high-level A* explores freely.
@@ -398,13 +403,10 @@ mod tests {
     /// A wall between room (0,0) and (1,0) forces the high-level path to
     /// detour (down then across then up), never crossing the closed edge.
     #[test]
-    // erasing_op: index is written as the literal Y*(cx+1)+X formula with Y=0
-    // to make the wall-indexing scheme obvious; the leading `0 *` is intentional.
-    #[allow(clippy::erasing_op)]
     fn high_level_routes_around_a_wall() {
         let mut maze = open_bordered(3, 3);
         // Close the vertical wall on the left edge of room (1,0) = v(1,0).
-        maze.v_walls[0 * (3 + 1) + 1] = true;
+        maze.v_walls[v_wall_index(1, 0, 3)] = true;
         let building = test_building(maze);
         let graph = RoomGraph::new(&building);
         let start = room_center(0, 0, 10.0);
@@ -432,12 +434,10 @@ mod tests {
     }
 
     #[test]
-    // erasing_op: literal Y*(cx+1)+X formula with Y=0 (see note above).
-    #[allow(clippy::erasing_op)]
     fn is_point_visible_blocked_by_wall_between_rooms() {
         let mut maze = open_bordered(2, 2);
         // Wall on the left edge of room (1,0).
-        maze.v_walls[0 * (2 + 1) + 1] = true;
+        maze.v_walls[v_wall_index(1, 0, 2)] = true;
         let building = test_building(maze);
         let graph = RoomGraph::new(&building);
         let size = Vec2::new(1.6, 1.6);

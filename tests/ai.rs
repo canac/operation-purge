@@ -262,8 +262,10 @@ fn two_robots_collide_and_enter_idle() {
 // 6. seeded AI-vs-AI battle determinism (CI regression anchor)
 // --------------------------------------------------------------------
 
+type Fingerprint = Vec<(u32, u32, u32, u32)>;
+
 /// A fingerprint of the full sim state: sorted (id, pos bits, health bits).
-fn fingerprint(world: &World) -> Vec<(u32, u32, u32, u32)> {
+fn fingerprint(world: &World) -> Fingerprint {
     let mut v: Vec<(u32, u32, u32, u32)> = world
         .robots
         .iter()
@@ -289,7 +291,7 @@ fn load_battle(seed: u64) -> World {
 
 /// Run an AI-vs-AI battle up to `cap` ticks. Returns (tick, status,
 /// fingerprint-at-stop).
-fn run_ai_battle(seed: u64, cap: u32) -> (u32, Status, Vec<(u32, u32, u32, u32)>) {
+fn run_ai_battle(seed: u64, cap: u32) -> (u32, Status, Fingerprint) {
     let mut world = load_battle(seed);
     let dt = 1.0 / 60.0;
     let mut tick = 0u32;
