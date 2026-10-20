@@ -1,8 +1,6 @@
-//! The four GLSL 330 core programs (design §3.4), one per FVF vertex
-//! layout. Sources are inline `const` strings (the design allows
-//! `include_str!` from `.glsl` files *or* inline consts); they are compiled
-//! at runtime only. All CPU-side setup math (material/light uniform
-//! packing) is pure and unit-tested; the GLSL text itself is pinned by
+//! The four GLSL 330 core programs, one per original FVF vertex layout.
+//! Sources are inline `const` strings compiled at runtime only. All CPU-side
+//! uniform packing is pure and unit-tested; the GLSL text itself is pinned by
 //! tests that assert its load-bearing PARITY constants are present.
 
 use std::rc::Rc;
@@ -11,23 +9,8 @@ use glow::HasContext;
 
 use crate::data::builtin::LIGHT_DATA;
 use crate::error::GlError;
-
-/// One shader program per original FVF layout (design §3.4 table).
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ProgramKind {
-    /// pos vec3 (12 B) — 2D map, crosshair, health bars.
-    Flat,
-    /// pos+normal (24 B) — robot dome/barrel/treads, center markers.
-    Lit,
-    /// pos+normal+uv (32 B) — building walls/floor/ceiling.
-    LitTextured,
-    /// pos + rgba8 + uv (24 B) — particles, projectiles, holes, HUD text.
-    Sprite,
-}
-
-/// D3D9 global ambient `0x202020` (`cBuilding3D.cpp:60`
-/// `D3DRS_AMBIENT = 0x00202020`): each channel `0x20/255`.
-pub const GLOBAL_AMBIENT: f32 = 0x20 as f32 / 255.0;
+use crate::math::d3dx::Mat4;
+use crate::math::Rgba;
 
 // ---------------------------------------------------------------------------
 // GLSL sources
@@ -35,7 +18,7 @@ pub const GLOBAL_AMBIENT: f32 = 0x20 as f32 / 255.0;
 
 /// prog_flat VS/FS: `gl_Position = u_mvp * pos`; solid `u_color`
 /// (mathematically identical to the original LIGHTING-on + AMBIENT
-/// 0x00FFFFFF flat-color trick, design §3.4).
+/// 0x00FFFFFF flat-color trick).
 pub const FLAT_VS: &str = r#"#version 330 core
 layout(location = 0) in vec3 a_pos;
 uniform mat4 u_mvp;
@@ -48,7 +31,7 @@ out vec4 frag;
 void main() { frag = u_color; }
 "#;
 
-/// The shared FFP-Gouraud vertex-lighting body (design §3.4 prog_lit).
+/// The shared FFP-Gouraud vertex-lighting body.
 /// Emitted into both the lit and lit-textured vertex shaders so the
 /// equation stays byte-identical between them.
 ///
@@ -60,7 +43,8 @@ void main() { frag = u_color; }
 /// - `N` is **NEVER normalized** (dome normals of length 0.08-0.5
 ///   intentionally dim the lighting — the 2011 look);
 /// - `att = 1/(a0 + a1*d + a2*d^2)`, coefficients from the `LIGHT_DATA` const;
-/// - `global_ambient = vec3(0x20/255)`; `mat_ambient = mat_diffuse = u_material`;
+/// - `global_ambient = vec3(0x20/255)` (`D3DRS_AMBIENT = 0x00202020`,
+///   `cBuilding3D.cpp:59`); `mat_ambient = mat_diffuse = u_material`;
 /// - the light's ambient is white too (`cOperationPurge.cpp:3095`), and D3D
 ///   attenuates per-light ambient like diffuse.
 const LIT_GOURAUD: &str = r#"
@@ -128,7 +112,7 @@ void main() {{
     )
 }
 
-/// stage-0 MODULATE: `texture(uv) * gouraud_color` (design §3.4).
+/// stage-0 MODULATE: `texture(uv) * gouraud_color`.
 pub const LIT_TEX_FS: &str = r#"#version 330 core
 in vec4 v_color;
 in vec2 v_uv;
@@ -138,7 +122,7 @@ void main() { frag = texture(u_tex, v_uv) * v_color; }
 "#;
 
 /// prog_sprite VS: vertices arrive ALREADY view-space (cSprite3D billboard
-/// pipeline), so only the projection is applied (design §3.4).
+/// pipeline), so only the projection is applied.
 pub const SPRITE_VS: &str = r#"#version 330 core
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec4 a_color;
@@ -166,14 +150,14 @@ void main() { frag = texture(u_tex, v_uv) * v_color; }
 // ---------------------------------------------------------------------------
 
 /// The `u_light_atten` uniform value from the compiled-in `LIGHT_DATA`
-/// const (design §4.3): `[a0, a1, a2]`.
+/// const: `[a0, a1, a2]`.
 pub fn light_atten_uniform() -> [f32; 3] {
     [LIGHT_DATA.a0, LIGHT_DATA.a1, LIGHT_DATA.a2]
 }
 
 /// The `u_material` uniform value — the part/team color's RGB. The D3D
-/// material set both ambient and diffuse to this color (design §3.4).
-pub fn material_uniform(color: crate::math::Rgba) -> [f32; 3] {
+/// material set both ambient and diffuse to this color.
+pub fn material_uniform(color: Rgba) -> [f32; 3] {
     [color.r, color.g, color.b]
 }
 
@@ -181,22 +165,158 @@ pub fn material_uniform(color: crate::math::Rgba) -> [f32; 3] {
 // Runtime GL compilation
 // ---------------------------------------------------------------------------
 
-/// A compiled + linked GL program plus the shared context handle. Uniform
-/// locations are looked up lazily by name at draw time by the callers.
+/// Uniform locations resolved once at link time; `None` for a uniform the
+/// program does not declare (or the driver optimized out).
+#[derive(Default)]
+pub struct Uniforms {
+    pub mvp: Option<glow::UniformLocation>,
+    pub world_view: Option<glow::UniformLocation>,
+    pub material: Option<glow::UniformLocation>,
+    pub light_atten: Option<glow::UniformLocation>,
+    pub color: Option<glow::UniformLocation>,
+    pub proj: Option<glow::UniformLocation>,
+    pub tex: Option<glow::UniformLocation>,
+    pub screen: Option<glow::UniformLocation>,
+}
+
+/// A linked GL program with its uniform locations. Deletes the program on
+/// drop. Runtime-only (needs a current GL context).
 pub struct Program {
-    pub kind: ProgramKind,
-    pub program: glow::Program,
     gl: Rc<glow::Context>,
+    program: glow::Program,
+    pub u: Uniforms,
 }
 
 impl Program {
-    pub fn uniform(&self, name: &str) -> Option<glow::UniformLocation> {
-        unsafe { self.gl.get_uniform_location(self.program, name) }
+    /// Compiles and links `vs_src` + `fs_src`, releasing every GL object it
+    /// created if any step fails.
+    pub fn link(gl: &Rc<glow::Context>, vs_src: &str, fs_src: &str) -> Result<Program, GlError> {
+        unsafe {
+            let vs = compile(gl, glow::VERTEX_SHADER, vs_src, "vertex")?;
+            let fs = match compile(gl, glow::FRAGMENT_SHADER, fs_src, "fragment") {
+                Ok(fs) => fs,
+                Err(e) => {
+                    gl.delete_shader(vs);
+                    return Err(e);
+                }
+            };
+            let linked = gl.create_program().map_err(GlError::ProgramLink).and_then(|program| {
+                gl.attach_shader(program, vs);
+                gl.attach_shader(program, fs);
+                gl.link_program(program);
+                if gl.get_program_link_status(program) {
+                    gl.detach_shader(program, vs);
+                    gl.detach_shader(program, fs);
+                    Ok(program)
+                } else {
+                    let log = gl.get_program_info_log(program);
+                    gl.delete_program(program);
+                    Err(GlError::ProgramLink(log))
+                }
+            });
+            gl.delete_shader(vs);
+            gl.delete_shader(fs);
+            let program = linked?;
+            let loc = |name: &str| gl.get_uniform_location(program, name);
+            let u = Uniforms {
+                mvp: loc("u_mvp"),
+                world_view: loc("u_world_view"),
+                material: loc("u_material"),
+                light_atten: loc("u_light_atten"),
+                color: loc("u_color"),
+                proj: loc("u_proj"),
+                tex: loc("u_tex"),
+                screen: loc("u_screen"),
+            };
+            Ok(Program {
+                gl: gl.clone(),
+                program,
+                u,
+            })
+        }
+    }
+
+    /// Makes this the current program and points `u_tex` (if declared) at
+    /// texture unit 0, which is also made active.
+    pub fn bind(&self) {
+        unsafe {
+            self.gl.use_program(Some(self.program));
+            if let Some(loc) = &self.u.tex {
+                self.gl.uniform_1_i32(Some(loc), 0);
+                self.gl.active_texture(glow::TEXTURE0);
+            }
+        }
+    }
+
+    pub fn set_mat4(&self, loc: &Option<glow::UniformLocation>, m: &Mat4) {
+        if let Some(loc) = loc {
+            unsafe {
+                self.gl
+                    .uniform_matrix_4_f32_slice(Some(loc), false, &m.to_row_major_array());
+            }
+        }
+    }
+
+    pub fn set_vec2(&self, loc: &Option<glow::UniformLocation>, x: f32, y: f32) {
+        if let Some(loc) = loc {
+            unsafe { self.gl.uniform_2_f32(Some(loc), x, y) };
+        }
+    }
+
+    pub fn set_vec3(&self, loc: &Option<glow::UniformLocation>, v: [f32; 3]) {
+        if let Some(loc) = loc {
+            unsafe { self.gl.uniform_3_f32(Some(loc), v[0], v[1], v[2]) };
+        }
+    }
+
+    pub fn set_color(&self, loc: &Option<glow::UniformLocation>, c: Rgba) {
+        if let Some(loc) = loc {
+            unsafe { self.gl.uniform_4_f32(Some(loc), c.r, c.g, c.b, c.a) };
+        }
+    }
+
+    /// Binds a lit program for a pass: [`Program::bind`] plus the constant
+    /// `u_light_atten`.
+    pub fn bind_lit(&self) {
+        self.bind();
+        self.set_vec3(&self.u.light_atten, light_atten_uniform());
+    }
+
+    /// The per-draw lit uniforms: `u_mvp`, `u_world_view`, `u_material`.
+    pub fn set_lit(&self, mvp: &Mat4, world_view: &Mat4, material: Rgba) {
+        self.set_mat4(&self.u.mvp, mvp);
+        self.set_mat4(&self.u.world_view, world_view);
+        self.set_vec3(&self.u.material, material_uniform(material));
     }
 }
 
-/// The four compiled programs (design §3.4). Runtime-only (needs a current
-/// GL context); never constructed by the headless test suite.
+impl Drop for Program {
+    fn drop(&mut self) {
+        unsafe { self.gl.delete_program(self.program) };
+    }
+}
+
+unsafe fn compile(
+    gl: &glow::Context,
+    stage: u32,
+    src: &str,
+    name: &'static str,
+) -> Result<glow::Shader, GlError> {
+    let shader = gl
+        .create_shader(stage)
+        .map_err(|e| GlError::ShaderCompile { stage: name, log: e })?;
+    gl.shader_source(shader, src);
+    gl.compile_shader(shader);
+    if !gl.get_shader_compile_status(shader) {
+        let log = gl.get_shader_info_log(shader);
+        gl.delete_shader(shader);
+        return Err(GlError::ShaderCompile { stage: name, log });
+    }
+    Ok(shader)
+}
+
+/// The four game programs. Runtime-only; never constructed by the headless
+/// test suite.
 pub struct Programs {
     pub flat: Program,
     pub lit: Program,
@@ -204,58 +324,13 @@ pub struct Programs {
     pub sprite: Program,
 }
 
-/// Compiles and links all four programs (design §3.4). Runtime-only.
-pub fn compile_all(gl: Rc<glow::Context>) -> Result<Programs, GlError> {
-    let flat = link(&gl, ProgramKind::Flat, FLAT_VS, FLAT_FS)?;
-    let lit = link(&gl, ProgramKind::Lit, &lit_vs(), LIT_FS)?;
-    let lit_textured = link(&gl, ProgramKind::LitTextured, &lit_tex_vs(), LIT_TEX_FS)?;
-    let sprite = link(&gl, ProgramKind::Sprite, SPRITE_VS, SPRITE_FS)?;
-    Ok(Programs {
-        flat,
-        lit,
-        lit_textured,
-        sprite,
-    })
-}
-
-fn link(
-    gl: &Rc<glow::Context>,
-    kind: ProgramKind,
-    vs_src: &str,
-    fs_src: &str,
-) -> Result<Program, GlError> {
-    unsafe {
-        let compile =
-            |stage: u32, src: &str, name: &'static str| -> Result<glow::Shader, GlError> {
-                let shader = gl
-                    .create_shader(stage)
-                    .map_err(|e| GlError::ShaderCompile { stage: name, log: e })?;
-                gl.shader_source(shader, src);
-                gl.compile_shader(shader);
-                if !gl.get_shader_compile_status(shader) {
-                    return Err(GlError::ShaderCompile {
-                        stage: name,
-                        log: gl.get_shader_info_log(shader),
-                    });
-                }
-                Ok(shader)
-            };
-
-        let vs = compile(glow::VERTEX_SHADER, vs_src, "vertex")?;
-        let fs = compile(glow::FRAGMENT_SHADER, fs_src, "fragment")?;
-        let program = gl.create_program().map_err(GlError::ProgramLink)?;
-        gl.attach_shader(program, vs);
-        gl.attach_shader(program, fs);
-        gl.link_program(program);
-        if !gl.get_program_link_status(program) {
-            return Err(GlError::ProgramLink(gl.get_program_info_log(program)));
-        }
-        gl.delete_shader(vs);
-        gl.delete_shader(fs);
-        Ok(Program {
-            kind,
-            program,
-            gl: gl.clone(),
+impl Programs {
+    pub fn compile(gl: &Rc<glow::Context>) -> Result<Programs, GlError> {
+        Ok(Programs {
+            flat: Program::link(gl, FLAT_VS, FLAT_FS)?,
+            lit: Program::link(gl, &lit_vs(), LIT_FS)?,
+            lit_textured: Program::link(gl, &lit_tex_vs(), LIT_TEX_FS)?,
+            sprite: Program::link(gl, SPRITE_VS, SPRITE_FS)?,
         })
     }
 }
@@ -263,12 +338,10 @@ fn link(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::Rgba;
 
     #[test]
-    fn global_ambient_is_0x20_over_255() {
-        assert!((GLOBAL_AMBIENT - 0.1254902).abs() < 1e-6);
-        // The GLSL literal must match the const.
+    fn global_ambient_literal_is_0x20_over_255() {
+        assert!((0x20 as f32 / 255.0 - 0.1254902).abs() < 1e-6);
         assert!(LIT_GOURAUD.contains("0.12549020"));
     }
 

@@ -1,8 +1,6 @@
 //! 2D map + robot/center markers + crosshair + health-bar layout, replacing
-//! `cOverlay2D`'s geometry half (`cOverlay2D.cpp`, source-map §3.2) plus the
-//! `Render2D` viewport/world-matrix setup (`cOperationPurge.cpp:2690-2760`).
-//! Reused by the New Game screen, modals, and profiler pane at M8/M11
-//! (design §3.6 "one render path, no second UI stack").
+//! `cOverlay2D`'s geometry half (`cOverlay2D.cpp`) plus the `Render2D`
+//! viewport/world-matrix setup (`cOperationPurge.cpp:2690-2760`).
 //!
 //! All geometry is **NDC-direct**: the flat program's MVP is the 2D world
 //! matrix (or identity for the crosshair), exactly like the original's
@@ -20,17 +18,13 @@ use glow::HasContext;
 
 use crate::data::builtin::Robot3DDimensions;
 use crate::error::GlError;
-use crate::maze::building::Building;
-use crate::math::Rgba;
+use crate::game::{MAP_VIEWPORT_OFFSET, MAP_VIEWPORT_SIZE};
 use crate::math::d3dx::Mat4;
-use crate::render::gl::{GlState, WindingDecision};
+use crate::math::Rgba;
+use crate::maze::building::Building;
 use crate::render::mesh::{Mesh, VertexPos};
-use crate::render::shaders::{Program, Programs};
+use crate::render::shaders::Program;
 
-/// 2D map viewport (`m_fBuilding2DOffset`/`m_fBuilding2DSize`,
-/// `cOperationPurge.cpp:74-75`).
-pub const MAP_VIEWPORT_OFFSET: f32 = 0.025;
-pub const MAP_VIEWPORT_SIZE: f32 = 0.95;
 /// Minimap viewport (`cOperationPurge.cpp:2709-2710`).
 pub const MINIMAP_VIEWPORT_OFFSET: f32 = 0.05;
 pub const MINIMAP_VIEWPORT_SIZE: f32 = 0.9;
@@ -183,27 +177,25 @@ pub fn health_bar_segments(fraction: f32) -> [HealthSegment; 2] {
     ]
 }
 
-/// 2D building geometry: wall vertices + a `LINELIST` index buffer tracing
-/// each wall polygon, plus a 4-vertex background quad
-/// (`CalcBuildingVerticesAndIndices`, `cOverlay2D.cpp:281-345`).
-pub struct MapGeometry {
+/// The 2D map's single index buffer + draw ranges
+/// (`CalcBuildingVerticesAndIndices`, `cOverlay2D.cpp:281-345`): the wall
+/// outline (a `LINES` list, `[0, wall_line_count)`) followed by a background
+/// quad spanning the building (`TRIANGLES`, `[background_start, +6)`).
+pub struct MapMesh {
     pub vertices: Vec<VertexPos>,
-    /// Line-list indices (pairs) for the wall outline.
-    pub wall_line_indices: Vec<u16>,
-    /// Index of the first of the 4 background-quad vertices.
-    pub background_first_vertex: usize,
-    /// Triangle-list indices (2 tris) for the background quad.
-    pub background_indices: [u16; 6],
+    pub indices: Vec<u16>,
+    pub wall_line_count: usize,
+    pub background_start: usize,
 }
 
-/// Builds the 2D map geometry from the traced wall polygons. Each polygon
+/// Builds the 2D map mesh from the traced wall polygons. Each polygon
 /// contributes one vertex per segment; the last segment's second index
 /// wraps back to the polygon's first vertex (closing the loop), matching
 /// the original exactly.
-pub fn build_map_geometry(building: &Building) -> MapGeometry {
+pub fn build_map_mesh(building: &Building) -> MapMesh {
     let (polygons, _wall_segments) = building.wall_polygons();
     let mut vertices: Vec<VertexPos> = Vec::new();
-    let mut wall_line_indices: Vec<u16> = Vec::new();
+    let mut indices: Vec<u16> = Vec::new();
 
     for polygon in &polygons {
         let first_vertex = vertices.len() as u16;
@@ -214,53 +206,26 @@ pub fn build_map_geometry(building: &Building) -> MapGeometry {
             vertices.push(VertexPos {
                 position: [x, y, 0.0],
             });
-            wall_line_indices.push(i);
-            wall_line_indices.push(i + 1);
+            indices.push(i);
+            indices.push(i + 1);
         }
-        // The last line's second endpoint references the polygon's start.
-        if let Some(last) = wall_line_indices.last_mut() {
+        if let Some(last) = indices.last_mut() {
             *last = first_vertex;
         }
     }
+    let wall_line_count = indices.len();
 
-    // Background quad spanning the whole building.
     let size = building.size();
-    let background_first_vertex = vertices.len();
-    let b0 = background_first_vertex as u16;
+    let b0 = vertices.len() as u16;
     vertices.push(VertexPos { position: [0.0, 0.0, 0.0] });
     vertices.push(VertexPos { position: [size.x, 0.0, 0.0] });
     vertices.push(VertexPos { position: [0.0, size.y, 0.0] });
     vertices.push(VertexPos { position: [size.x, size.y, 0.0] });
-    let background_indices = [b0, b0 + 1, b0 + 2, b0 + 1, b0 + 3, b0 + 2];
-
-    MapGeometry {
-        vertices,
-        wall_line_indices,
-        background_first_vertex,
-        background_indices,
-    }
-}
-
-/// The 2D map's single index buffer + draw ranges: the wall outline (a
-/// `LINES` list, `[0, wall_line_count)`) followed by the background quad
-/// (`TRIANGLES`, `[background_start, background_start + 6)`). Flattens
-/// [`build_map_geometry`] so one [`Mesh`] draws both primitives.
-pub struct MapMesh {
-    pub vertices: Vec<VertexPos>,
-    pub indices: Vec<u16>,
-    pub wall_line_count: usize,
-    pub background_start: usize,
-}
-
-/// Builds the combined 2D-map mesh (walls + background quad) for a building.
-pub fn build_map_mesh(building: &Building) -> MapMesh {
-    let geo = build_map_geometry(building);
-    let wall_line_count = geo.wall_line_indices.len();
-    let mut indices = geo.wall_line_indices;
     let background_start = indices.len();
-    indices.extend_from_slice(&geo.background_indices);
+    indices.extend_from_slice(&[b0, b0 + 1, b0 + 2, b0 + 1, b0 + 3, b0 + 2]);
+
     MapMesh {
-        vertices: geo.vertices,
+        vertices,
         indices,
         wall_line_count,
         background_start,
@@ -339,6 +304,16 @@ pub struct MapCenterData {
     pub color: Rgba,
 }
 
+/// One frame's 2D-map inputs (`Render2D`).
+#[derive(Clone, Debug)]
+pub struct MapFrame {
+    pub mode: MapMode,
+    pub view: MapView,
+    pub centers: Vec<MapCenterData>,
+    pub robots: Vec<MapRobotData>,
+    pub colors: MapColors,
+}
+
 /// The visible map window in room units (`pt2VisibleBuildingOffset` /
 /// `size2VisibleBuilding`, `cOperationPurge.cpp:2733-2737`).
 #[derive(Copy, Clone, Debug)]
@@ -349,9 +324,10 @@ pub struct MapView {
 
 /// Owns the uploaded 2D-map meshes and draws the full-screen map, the
 /// in-game minimap, and the 3D crosshair with `prog_flat`. The map mesh is
-/// per-building (rebuilt when a new game starts); the marker / crosshair /
-/// center meshes are static. Runtime-only (needs a current GL context).
+/// per-building; the marker / crosshair / center meshes are static.
+/// Runtime-only (needs a current GL context).
 pub struct Overlay2DRenderer {
+    gl: Rc<glow::Context>,
     map: Mesh<VertexPos>,
     map_wall_line_count: usize,
     map_background_start: usize,
@@ -368,111 +344,78 @@ impl Overlay2DRenderer {
         dims: &Robot3DDimensions,
     ) -> Result<Self, GlError> {
         let mm = build_map_mesh(building);
-        let mut map = Mesh::new(mm.vertices, mm.indices)?;
-        map.upload(gl.clone())?;
-
         let marker_dims = Robot2DDimensions::from_3d(dims);
-        let mut marker = Mesh::new(
-            robot_marker_vertices(&marker_dims).to_vec(),
-            robot_marker_indices().to_vec(),
-        )?;
-        marker.upload(gl.clone())?;
-
-        let mut crosshair = Mesh::new(
-            crosshair_vertices().to_vec(),
-            crosshair_line_indices().to_vec(),
-        )?;
-        crosshair.upload(gl.clone())?;
-
-        let mut unit_quad = Mesh::new(
-            health_bar_quad_vertices().to_vec(),
-            health_bar_quad_indices().to_vec(),
-        )?;
-        unit_quad.upload(gl)?;
-
         Ok(Self {
-            map,
+            map: Mesh::new(gl.clone(), &mm.vertices, &mm.indices)?,
             map_wall_line_count: mm.wall_line_count,
             map_background_start: mm.background_start,
-            marker,
-            crosshair,
-            unit_quad,
+            marker: Mesh::new(
+                gl.clone(),
+                &robot_marker_vertices(&marker_dims),
+                &robot_marker_indices(),
+            )?,
+            crosshair: Mesh::new(gl.clone(), &crosshair_vertices(), &crosshair_line_indices())?,
+            unit_quad: Mesh::new(
+                gl.clone(),
+                &health_bar_quad_vertices(),
+                &health_bar_quad_indices(),
+            )?,
             room_size: building.room_size,
+            gl,
         })
     }
 
     /// Sets `prog_flat`'s `u_mvp` + `u_color` uniforms for one draw.
-    fn set_flat(gl: &glow::Context, prog: &Program, mvp: &Mat4, color: Rgba) {
-        unsafe {
-            gl.use_program(Some(prog.program));
-            if let Some(loc) = prog.uniform("u_mvp") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_row_major_array());
-            }
-            if let Some(loc) = prog.uniform("u_color") {
-                gl.uniform_4_f32(Some(&loc), color.r, color.g, color.b, color.a);
-            }
-        }
+    fn set_flat(prog: &Program, mvp: &Mat4, color: Rgba) {
+        prog.set_mat4(&prog.u.mvp, mvp);
+        prog.set_color(&prog.u.color, color);
     }
 
     /// PARITY: the building half of `Render2D` (`cOperationPurge.cpp:2762-2835`):
     /// background (opaque in [`MapMode::Full2D`]), wall outline, centers,
     /// then robot markers, each culled to the visible window.
-    #[allow(clippy::too_many_arguments)]
-    pub fn render_map(
-        &self,
-        gl_state: &mut GlState,
-        programs: &Programs,
-        mode: MapMode,
-        view: MapView,
-        centers: &[MapCenterData],
-        robots: &[MapRobotData],
-        colors: MapColors,
-    ) {
-        gl_state.set_winding(WindingDecision::CullNone);
-        let gl = Rc::clone(gl_state.context());
-        let prog = &programs.flat;
-
-        let (screen_off, screen_size) = viewport(mode);
+    pub fn render_map(&self, prog: &Program, map: &MapFrame) {
+        prog.bind();
+        let view = map.view;
+        let (screen_off, screen_size) = viewport(map.mode);
         let world = map_world_matrix(self.room_size, view.offset, view.size, screen_off, screen_size);
         let visible = |p: Vec2| marker_visible(p, self.room_size, view.offset, view.size);
 
         // D3D's identity-projection z=0 is the near plane; GL's is mid-depth,
         // so drop scene depth to keep the map on top of the 3D view.
-        unsafe { gl.clear(glow::DEPTH_BUFFER_BIT) };
+        unsafe { self.gl.clear(glow::DEPTH_BUFFER_BIT) };
 
-        let mut background = colors.background;
-        if mode == MapMode::Full2D {
+        let mut background = map.colors.background;
+        if map.mode == MapMode::Full2D {
             background.a = 1.0;
         }
-        Self::set_flat(&gl, prog, &world, background);
+        Self::set_flat(prog, &world, background);
         self.map.draw_range(self.map_background_start, 6);
-        Self::set_flat(&gl, prog, &world, colors.wall);
+        Self::set_flat(prog, &world, map.colors.wall);
         self.map.draw_lines_range(0, self.map_wall_line_count);
 
-        for c in centers.iter().filter(|c| visible(c.position)) {
+        for c in map.centers.iter().filter(|c| visible(c.position)) {
             let mvp = Mat4::scaling(Vec3::splat(c.size))
                 .mul(&Mat4::translation(Vec3::new(c.position.x, c.position.y, 0.0)))
                 .mul(&world);
-            Self::set_flat(&gl, prog, &mvp, c.color);
+            Self::set_flat(prog, &mvp, c.color);
             self.unit_quad.draw();
         }
 
-        for r in robots.iter().filter(|r| visible(r.position)) {
+        for r in map.robots.iter().filter(|r| visible(r.position)) {
             let marker_mvp = robot_marker_matrix(r.direction, r.position).mul(&world);
-            Self::set_flat(&gl, prog, &marker_mvp, r.marker_color);
+            Self::set_flat(prog, &marker_mvp, r.marker_color);
             self.marker.draw_range(0, 6); // body square
-            Self::set_flat(&gl, prog, &marker_mvp, colors.barrel);
+            Self::set_flat(prog, &marker_mvp, map.colors.barrel);
             self.marker.draw_range(6, 6); // barrel
         }
     }
 
     /// PARITY: `cOverlay2D::RenderCrosshair` — screen-centered, 3D mode only.
-    pub fn render_crosshair(&self, gl_state: &mut GlState, programs: &Programs, color: Rgba) {
-        gl_state.set_winding(WindingDecision::CullNone);
-        let gl = Rc::clone(gl_state.context());
-        let identity = Mat4::scaling(Vec3::ONE);
-        unsafe { gl.clear(glow::DEPTH_BUFFER_BIT) };
-        Self::set_flat(&gl, &programs.flat, &identity, color);
+    pub fn render_crosshair(&self, prog: &Program, color: Rgba) {
+        prog.bind();
+        unsafe { self.gl.clear(glow::DEPTH_BUFFER_BIT) };
+        Self::set_flat(prog, &Mat4::IDENTITY, color);
         self.crosshair.draw_lines_range(0, 8);
     }
 }
@@ -579,27 +522,15 @@ mod tests {
     }
 
     #[test]
-    fn one_room_map_has_four_wall_verts_and_a_closed_line_loop() {
-        let geo = build_map_geometry(&one_room());
-        // 4 wall segments (square) + 4 background verts.
-        assert_eq!(geo.vertices.len(), 8);
-        assert_eq!(geo.background_first_vertex, 4);
-        // 4 line segments => 8 line indices; last wraps to the first vertex.
-        assert_eq!(geo.wall_line_indices.len(), 8);
-        assert_eq!(*geo.wall_line_indices.last().unwrap(), 0);
-        // Background quad indices reference verts 4..8.
-        assert_eq!(geo.background_indices, [4, 5, 6, 5, 7, 6]);
-    }
-
-    #[test]
-    fn build_map_mesh_concatenates_walls_then_background() {
+    fn one_room_map_mesh_is_a_closed_wall_loop_then_background() {
         let mm = build_map_mesh(&one_room());
-        // 8 wall-line indices, then the 6 background-quad indices.
-        assert_eq!(mm.wall_line_count, 8);
-        assert_eq!(mm.background_start, 8);
-        assert_eq!(mm.indices.len(), 14);
-        assert_eq!(&mm.indices[8..14], &[4, 5, 6, 5, 7, 6]);
+        // 4 wall segments (square) + 4 background verts.
         assert_eq!(mm.vertices.len(), 8);
+        // 4 line segments => 8 line indices; last wraps to the first vertex.
+        assert_eq!(mm.wall_line_count, 8);
+        assert_eq!(mm.indices[7], 0);
+        assert_eq!(mm.background_start, 8);
+        assert_eq!(&mm.indices[8..], &[4, 5, 6, 5, 7, 6]);
     }
 
     #[test]

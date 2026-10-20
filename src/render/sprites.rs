@@ -1,5 +1,5 @@
 //! CPU view-space billboard sprite batcher, ported from `cSprite3D`
-//! (`cSprite3D.cpp:13-349`, source-map §3.2).
+//! (`cSprite3D.cpp:13-349`).
 //!
 //! PARITY: the billboard basis reads the view matrix's **columns** 0/1/2
 //! (`cSprite3D.cpp:80-85`, via [`crate::math::d3dx::billboard_basis`]);
@@ -7,9 +7,9 @@
 //! sprite quads use the index pattern `(0,2,1)(1,2,3)`
 //! (`cSprite3D.cpp:55-60`); each sprite's 4 vertices are pre-transformed
 //! into **view space** on the CPU so the sprite shader only applies the
-//! projection (design §3.4 prog_sprite).
+//! projection (`prog_sprite`).
 //!
-//! FIX (design §1.3): the original keyed sprites in a `std::map<float,
+//! FIX: the original keyed sprites in a `std::map<float,
 //! tSprite*>` by depth, silently **dropping** any two with an identical
 //! depth key, and its `Flush` had a `std::max` batch-size bug plus a
 //! last-sprite-of-batch mis-texture. The port sorts a `Vec` with a
@@ -19,15 +19,12 @@
 use std::rc::Rc;
 
 use glam::{Vec2, Vec3};
-use glow::HasContext;
 
 use crate::error::GlError;
-use crate::math::Rgba;
-use crate::render::camera::FreeFlyCamera;
 use crate::math::d3dx::{self, Mat4};
-use crate::render::gl::GlState;
-use crate::render::mesh::{VertexLayout, VertexSprite};
-use crate::render::shaders::Programs;
+use crate::math::Rgba;
+use crate::render::mesh::{Mesh, VertexSprite};
+use crate::render::shaders::Program;
 
 /// `s_SpriteBatchSize` (`cOperationPurge.cpp:17`).
 pub const BATCH_SIZE: usize = 2048;
@@ -315,137 +312,58 @@ impl<T: Copy + PartialEq> Default for SpriteBatch<T> {
 
 /// The static index pattern for `n` sprites: `(0,2,1)(1,2,3)` per quad
 /// (`cSprite3D.cpp:55-60`), offset by 4 verts per sprite.
-pub fn sprite_indices(n_sprites: usize) -> Vec<u32> {
+pub fn sprite_indices(n_sprites: usize) -> Vec<u16> {
     let mut out = Vec::with_capacity(n_sprites * 6);
     for s in 0..n_sprites {
-        let v = (s * 4) as u32;
+        let v = (s * 4) as u16;
         out.extend_from_slice(&[v, v + 2, v + 1, v + 1, v + 2, v + 3]);
     }
     out
 }
 
 // ---------------------------------------------------------------------------
-// Runtime renderer — compiled everywhere, exercised only at a display.
+// Runtime renderer (needs a current GL context)
 // ---------------------------------------------------------------------------
 
 /// Owns a dynamic (orphaned) vertex buffer sized for one batch plus a
 /// static index buffer, and draws a [`SpriteBatch`] with `prog_sprite`
 /// (verts already view-space → projection only). Runtime-only.
 pub struct SpriteRenderer {
-    gl: Rc<glow::Context>,
-    vao: glow::VertexArray,
-    vbo: glow::Buffer,
-    ebo: glow::Buffer,
+    mesh: Mesh<VertexSprite>,
 }
 
 impl SpriteRenderer {
     pub fn new(gl: Rc<glow::Context>) -> Result<Self, GlError> {
-        unsafe {
-            let vao = gl
-                .create_vertex_array()
-                .map_err(|e| GlError::Context(format!("sprite vao: {e}")))?;
-            let vbo = gl
-                .create_buffer()
-                .map_err(|e| GlError::Context(format!("sprite vbo: {e}")))?;
-            let ebo = gl
-                .create_buffer()
-                .map_err(|e| GlError::Context(format!("sprite ebo: {e}")))?;
-            gl.bind_vertex_array(Some(vao));
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (BATCH_SIZE * 4 * std::mem::size_of::<VertexSprite>()) as i32,
-                glow::STREAM_DRAW,
-            );
-            // Static index buffer: BATCH_SIZE quads, never changes.
-            let indices = sprite_indices(BATCH_SIZE);
-            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(ebo));
-            gl.buffer_data_u8_slice(
-                glow::ELEMENT_ARRAY_BUFFER,
-                bytemuck::cast_slice(&indices),
-                glow::STATIC_DRAW,
-            );
-            VertexSprite::configure_attribs(&gl);
-            gl.bind_vertex_array(None);
-            Ok(Self { gl, vao, vbo, ebo })
-        }
+        let mesh = Mesh::dynamic(gl, BATCH_SIZE * 4, &sprite_indices(BATCH_SIZE))?;
+        Ok(Self { mesh })
     }
 
-    /// Uploads the batch and draws it. The batch is expected to hold
-    /// ≤ `BATCH_SIZE` sprites per call; larger batches are drawn in
-    /// `BATCH_SIZE`-sprite chunks. Runtime-only.
+    /// Uploads the batch and draws it in `BATCH_SIZE`-sprite chunks, one
+    /// draw per texture run. `bind_texture` binds a run's texture.
     pub fn render<T: Copy + PartialEq>(
         &self,
-        gl_state: &mut GlState,
-        programs: &Programs,
-        camera: &FreeFlyCamera,
-        aspect: f32,
+        prog: &Program,
+        proj: &Mat4,
         batch: &SpriteBatch<T>,
-        bind_texture: impl Fn(&glow::Context, T),
+        bind_texture: impl Fn(T),
     ) {
         if batch.is_empty() {
             return;
         }
         let (vertices, runs) = batch.build();
-        let prog = &programs.sprite;
-        let proj = camera.projection(aspect);
-        let _ = gl_state;
-
-        unsafe {
-            self.gl.use_program(Some(prog.program));
-            if let Some(loc) = prog.uniform("u_proj") {
-                self.gl
-                    .uniform_matrix_4_f32_slice(Some(&loc), false, &proj.to_row_major_array());
-            }
-            if let Some(loc) = prog.uniform("u_tex") {
-                self.gl.uniform_1_i32(Some(&loc), 0);
-            }
-            self.gl.active_texture(glow::TEXTURE0);
-            self.gl.bind_vertex_array(Some(self.vao));
-        }
+        prog.bind();
+        prog.set_mat4(&prog.u.proj, proj);
 
         for run in &runs {
-            // Vertices for this run's batch, relative to a batch boundary.
             let batch_start = (run.first / BATCH_SIZE) * BATCH_SIZE;
             let local_first = run.first - batch_start;
-            unsafe {
-                bind_texture(&self.gl, run.texture);
-                self.gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
-                // Orphan + refill only at each batch's first run.
-                if local_first == 0 {
-                    let end = (batch_start + BATCH_SIZE).min(vertices.len() / 4);
-                    let slice = &vertices[batch_start * 4..end * 4];
-                    self.gl.buffer_data_size(
-                        glow::ARRAY_BUFFER,
-                        (BATCH_SIZE * 4 * std::mem::size_of::<VertexSprite>()) as i32,
-                        glow::STREAM_DRAW,
-                    );
-                    self.gl.buffer_sub_data_u8_slice(
-                        glow::ARRAY_BUFFER,
-                        0,
-                        bytemuck::cast_slice(slice),
-                    );
-                }
-                self.gl.draw_elements(
-                    glow::TRIANGLES,
-                    (run.count * 6) as i32,
-                    glow::UNSIGNED_INT,
-                    (local_first * 6 * std::mem::size_of::<u32>()) as i32,
-                );
+            bind_texture(run.texture);
+            // Each batch's vertices are uploaded once, at its first run.
+            if local_first == 0 {
+                let end = (batch_start + BATCH_SIZE).min(vertices.len() / 4);
+                self.mesh.refill(&vertices[batch_start * 4..end * 4]);
             }
-        }
-        unsafe {
-            self.gl.bind_vertex_array(None);
-        }
-    }
-}
-
-impl Drop for SpriteRenderer {
-    fn drop(&mut self) {
-        unsafe {
-            self.gl.delete_vertex_array(self.vao);
-            self.gl.delete_buffer(self.vbo);
-            self.gl.delete_buffer(self.ebo);
+            self.mesh.draw_range(local_first * 6, run.count * 6);
         }
     }
 }

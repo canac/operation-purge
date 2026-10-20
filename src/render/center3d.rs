@@ -1,28 +1,26 @@
 //! Center marker geometry, ported verbatim from `cCenter3D`
-//! (`cCenter3D.cpp:54-122`, source-map §3.3).
+//! (`cCenter3D.cpp:54-122`).
 //!
 //! An 8-vertex unit marker — a floor square lifted to `z = fWallDist`
 //! (0.001) plus one −X wall square inset by `fWallDist` — instanced per
 //! center by `RotZ(orientation) * Scale(size) * Translate(position)`
-//! (design §3.2 row-vector order, `cCenter3D.cpp:61-71`). The 0.001 local
+//! (row-vector order, `cCenter3D.cpp:61-71`). The 0.001 local
 //! lift becomes `0.001 * fSize` after the scale, so markers sit just above
 //! the floor/wall and never z-fight. Per-team material color.
 //!
 //! The original draws two `D3DPT_TRIANGLESTRIP`s (verts 0-3, 4-7); those
-//! strips are converted to indexed triangle lists here (design §3.5).
+//! strips are converted to indexed triangle lists here.
 
 use std::rc::Rc;
 
 use glam::Vec3;
-use glow::HasContext;
 
 use crate::error::GlError;
-use crate::math::Rgba;
-use crate::render::camera::FreeFlyCamera;
 use crate::math::d3dx::Mat4;
-use crate::render::gl::{GlState, WindingDecision};
+use crate::math::Rgba;
 use crate::render::mesh::{Mesh, VertexLit};
-use crate::render::shaders::{self, Programs};
+use crate::render::scene::FrameMatrices;
+use crate::render::shaders::Program;
 
 /// `fWallDist` (`cCenter3D.cpp:97`): the local z/x lift keeping the marker
 /// off the floor/wall; scaled by `fSize` at instance time.
@@ -86,46 +84,16 @@ pub struct CenterRenderer {
 
 impl CenterRenderer {
     pub fn new(gl: Rc<glow::Context>) -> Result<Self, GlError> {
-        let mut mesh = Mesh::new(build_vertices().to_vec(), build_indices().to_vec())?;
-        mesh.upload(gl)?;
+        let mesh = Mesh::new(gl, &build_vertices(), &build_indices())?;
         Ok(Self { mesh })
     }
 
-    /// Draws one center marker. Runtime-only.
-    pub fn render(
-        &self,
-        gl_state: &mut GlState,
-        programs: &Programs,
-        camera: &FreeFlyCamera,
-        aspect: f32,
-        decision: WindingDecision,
-        data: &CenterRenderData,
-    ) {
-        gl_state.set_winding(decision);
-        let gl = Rc::clone(gl_state.context());
-        let prog = &programs.lit;
-
+    /// Draws one center marker with an already-bound lit program
+    /// ([`Program::bind_lit`]).
+    pub fn render(&self, prog: &Program, frame: &FrameMatrices, data: &CenterRenderData) {
         let world = world_matrix(data.orientation, data.size, data.position_x, data.position_y);
-        let mvp = camera.mvp(&world, aspect);
-        let world_view = camera.world_view(&world);
-
-        unsafe {
-            gl.use_program(Some(prog.program));
-            if let Some(loc) = prog.uniform("u_mvp") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_row_major_array());
-            }
-            if let Some(loc) = prog.uniform("u_world_view") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &world_view.to_row_major_array());
-            }
-            if let Some(loc) = prog.uniform("u_material") {
-                let m = shaders::material_uniform(data.color);
-                gl.uniform_3_f32(Some(&loc), m[0], m[1], m[2]);
-            }
-            if let Some(loc) = prog.uniform("u_light_atten") {
-                let a = shaders::light_atten_uniform();
-                gl.uniform_3_f32(Some(&loc), a[0], a[1], a[2]);
-            }
-        }
+        let (mvp, world_view) = frame.lit(&world);
+        prog.set_lit(&mvp, &world_view, data.color);
         self.mesh.draw();
     }
 }

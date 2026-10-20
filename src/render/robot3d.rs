@@ -1,5 +1,5 @@
 //! Procedural robot geometry: dome (body) + barrel + treads, ported
-//! verbatim from `cRobot3D` (`cRobot3D.cpp:117-516`, source-map §3.3).
+//! verbatim from `cRobot3D` (`cRobot3D.cpp:117-516`).
 //!
 //! PARITY: dome/barrel/tread normals are the **raw (un-normalized)
 //! scaled positions** — `D3DRS_NORMALIZENORMALS` is never set, so a dome
@@ -7,7 +7,7 @@
 //! dim the FFP-Gouraud lighting (the 2011 look; `prog_lit` never
 //! normalizes either, see `render::shaders`). The barrel cap is a
 //! `D3DPT_TRIANGLEFAN` (`cRobot3D.cpp:485`) converted to an indexed
-//! triangle list at build time (design §1.5.13). The second tread is a
+//! triangle list at build time. The second tread is a
 //! byte-copy of the first, shifted ±Y (`cRobot3D.cpp:379-391`,
 //! `447-450`).
 //!
@@ -19,30 +19,20 @@
 use std::rc::Rc;
 
 use glam::Vec3;
-use glow::HasContext;
 
 use crate::data::builtin::Robot3DDimensions;
 use crate::error::GlError;
-use crate::math::{sphere_coord, Rgba};
-use crate::render::camera::FreeFlyCamera;
 use crate::math::d3dx::{Mat4, D3DX_PI};
-use crate::render::gl::{GlState, WindingDecision};
+use crate::math::{sphere_coord, Rgba};
 use crate::render::mesh::{triangle_fan_to_list, Mesh, VertexLit};
-use crate::render::shaders::{self, Programs};
+use crate::render::scene::FrameMatrices;
+use crate::render::shaders::Program;
 
 fn vert(position: Vec3, normal: Vec3) -> VertexLit {
     VertexLit {
         position: [position.x, position.y, position.z],
         normal: [normal.x, normal.y, normal.z],
     }
-}
-
-/// The three procedural robot part meshes, CPU-side (not yet uploaded).
-/// Draw order and per-part material colors mirror `cRobot3D::Render`.
-pub struct RobotGeometry {
-    pub body: (Vec<VertexLit>, Vec<u16>),
-    pub barrel: (Vec<VertexLit>, Vec<u16>),
-    pub treads: (Vec<VertexLit>, Vec<u16>),
 }
 
 /// Body (dome) vertices + indices (`CalcBodyVertices`/`CalcBodyIndices`,
@@ -239,20 +229,6 @@ pub fn build_treads(dims: &Robot3DDimensions) -> (Vec<VertexLit>, Vec<u16>) {
     (verts, indices)
 }
 
-/// Builds all three procedural part meshes (CPU-side) from the compiled-in
-/// `OBJECTS` dimensions (`data::builtin::OBJECTS`).
-pub fn build_geometry(dims: &Robot3DDimensions) -> RobotGeometry {
-    RobotGeometry {
-        body: build_body(dims),
-        barrel: build_barrel(dims),
-        treads: build_treads(dims),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Runtime renderer — compiled everywhere, exercised only at a display.
-// ---------------------------------------------------------------------------
-
 /// Per-instance robot render inputs (`cRobot3D::tRenderData`,
 /// `cRobot3D.h`): pose + per-part material colors.
 #[derive(Copy, Clone, Debug)]
@@ -275,99 +251,30 @@ pub struct RobotRenderer {
 
 impl RobotRenderer {
     pub fn new(gl: Rc<glow::Context>, dims: &Robot3DDimensions) -> Result<Self, GlError> {
-        let geo = build_geometry(dims);
-        let mut body = Mesh::new(geo.body.0, geo.body.1)?;
-        let mut barrel = Mesh::new(geo.barrel.0, geo.barrel.1)?;
-        let mut treads = Mesh::new(geo.treads.0, geo.treads.1)?;
-        body.upload(gl.clone())?;
-        barrel.upload(gl.clone())?;
-        treads.upload(gl)?;
+        let upload = |(v, i): (Vec<VertexLit>, Vec<u16>)| Mesh::new(gl.clone(), &v, &i);
         Ok(Self {
-            body,
-            barrel,
-            treads,
+            body: upload(build_body(dims))?,
+            barrel: upload(build_barrel(dims))?,
+            treads: upload(build_treads(dims))?,
         })
     }
 
-    /// Draws one posed robot. `decision` is the committed per-category
-    /// winding decision (original: `D3DCULL_CCW`). Runtime-only.
-    pub fn render(
-        &self,
-        gl_state: &mut GlState,
-        programs: &Programs,
-        camera: &FreeFlyCamera,
-        aspect: f32,
-        decision: WindingDecision,
-        data: &RobotRenderData,
-    ) {
-        gl_state.set_winding(decision);
-        let gl = Rc::clone(gl_state.context());
-        let prog = &programs.lit;
-
+    /// Draws one posed robot with an already-bound lit program
+    /// ([`Program::bind_lit`]), in `cRobot3D::Render` part order.
+    pub fn render(&self, prog: &Program, frame: &FrameMatrices, data: &RobotRenderData) {
         // world = RotZ(direction) * Translate(position) (cRobot3D.cpp:105-108).
         let world = Mat4::rotation_z(data.direction).mul(&Mat4::translation(data.position));
         // Barrel adds RotY(-elevation) in front of the world (cRobot3D.cpp:476-478).
         let barrel_world = Mat4::rotation_y(-data.barrel_elevation).mul(&world);
 
-        unsafe {
-            gl.use_program(Some(prog.program));
-            if let Some(loc) = prog.uniform("u_light_atten") {
-                let a = shaders::light_atten_uniform();
-                gl.uniform_3_f32(Some(&loc), a[0], a[1], a[2]);
-            }
-        }
-
-        self.draw_part(&gl, prog, camera, aspect, &world, data.body_color, &self.body);
-        self.draw_part(
-            &gl,
-            prog,
-            camera,
-            aspect,
-            &barrel_world,
-            data.barrel_color,
-            &self.barrel,
-        );
-        self.draw_part(
-            &gl,
-            prog,
-            camera,
-            aspect,
-            &world,
-            data.tread_color,
-            &self.treads,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn draw_part(
-        &self,
-        gl: &glow::Context,
-        prog: &shaders::Program,
-        camera: &FreeFlyCamera,
-        aspect: f32,
-        world: &Mat4,
-        color: Rgba,
-        mesh: &Mesh<VertexLit>,
-    ) {
-        let mvp = camera.mvp(world, aspect);
-        let world_view = camera.world_view(world);
-        unsafe {
-            if let Some(loc) = prog.uniform("u_mvp") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_row_major_array());
-            }
-            if let Some(loc) = prog.uniform("u_world_view") {
-                gl.uniform_matrix_4_f32_slice(
-                    Some(&loc),
-                    false,
-                    &world_view.to_row_major_array(),
-                );
-            }
-            if let Some(loc) = prog.uniform("u_material") {
-                let m = shaders::material_uniform(color);
-                gl.uniform_3_f32(Some(&loc), m[0], m[1], m[2]);
-            }
-        }
-        mesh.draw();
+        let draw = |world: &Mat4, color: Rgba, mesh: &Mesh<VertexLit>| {
+            let (mvp, world_view) = frame.lit(world);
+            prog.set_lit(&mvp, &world_view, color);
+            mesh.draw();
+        };
+        draw(&world, data.body_color, &self.body);
+        draw(&barrel_world, data.barrel_color, &self.barrel);
+        draw(&world, data.tread_color, &self.treads);
     }
 }
 

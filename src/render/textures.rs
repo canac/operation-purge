@@ -1,5 +1,5 @@
-//! Filename-keyed texture cache, replacing `cTextureManager`
-//! (source-map §3.2, `cTextureManager.cpp`).
+//! Texture decode + GL upload, replacing `cTextureManager`
+//! (`cTextureManager.cpp`).
 //!
 //! Every shipped texture is normalized offline to **PNG RGBA8** (see the
 //! README), so decode is a single `image::load_from_memory` call — the crate
@@ -12,12 +12,11 @@
 //!
 //! `GL_REPEAT` wrap is mandatory (building UV = length/textureSize) and
 //! `GL_LINEAR`/`GL_LINEAR_MIPMAP_LINEAR` filtering matches the D3D sampler
-//! state (design §3.5). Decode is a pure CPU function (unit-tested against
+//! state. Decode is a pure CPU function (unit-tested against
 //! known pixel colors of the shipped PNGs); GL upload is compiled but
 //! exercised only at runtime.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 use glow::HasContext;
@@ -35,7 +34,7 @@ pub enum ProcessMode {
 
 /// A decoded, CPU-side image: tightly packed RGBA8, top row first (the
 /// `image` crate's orientation, matching GL's expectation once we treat row
-/// 0 as the top). NPOT sizes are legal (design §3.5, `GL_REPEAT`).
+/// 0 as the top). NPOT sizes are legal under `GL_REPEAT`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodedImage {
     pub width: u32,
@@ -63,8 +62,8 @@ pub fn decode_image(bytes: &[u8], mode: ProcessMode) -> Result<DecodedImage, Str
     let mut rgba = img.to_rgba8();
     if mode == ProcessMode::NoAlpha {
         // processNoAlpha: force every texel opaque (X8R8G8B8).
-        for px in rgba.chunks_exact_mut(4) {
-            px[3] = 0xFF;
+        for px in rgba.pixels_mut() {
+            px.0[3] = 0xFF;
         }
     }
     Ok(DecodedImage {
@@ -74,17 +73,16 @@ pub fn decode_image(bytes: &[u8], mode: ProcessMode) -> Result<DecodedImage, Str
     })
 }
 
-/// A GL texture handle plus its dimensions.
+/// An uploaded GL texture, deleted on drop.
 pub struct Texture {
-    pub width: u32,
-    pub height: u32,
+    gl: Rc<glow::Context>,
     pub handle: glow::Texture,
 }
 
 impl Texture {
     /// Uploads a decoded image as a mipmapped, `GL_REPEAT`, trilinear-filtered
-    /// 2D texture (design §3.5). Runtime-only (needs a current context).
-    pub fn upload(gl: &glow::Context, image: &DecodedImage) -> Result<Texture, GlError> {
+    /// 2D texture. Runtime-only (needs a current context).
+    pub fn upload(gl: &Rc<glow::Context>, image: &DecodedImage) -> Result<Texture, GlError> {
         unsafe {
             let handle = gl
                 .create_texture()
@@ -116,48 +114,56 @@ impl Texture {
             gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
             gl.bind_texture(glow::TEXTURE_2D, None);
             Ok(Texture {
-                width: image.width,
-                height: image.height,
+                gl: gl.clone(),
                 handle,
             })
         }
     }
-}
 
-/// Global, filename-keyed cache (replacing the original's shared
-/// non-refcounted global pointer cache, source-map §3.2). Owns the shared
-/// context so `load` can upload on cache misses.
-pub struct TextureManager {
-    gl: Rc<glow::Context>,
-    cache: HashMap<PathBuf, Texture>,
-}
+    /// A 1x1 opaque-white texture: the fallback for a missing image and the
+    /// texture of untextured sprites.
+    pub fn white(gl: &Rc<glow::Context>) -> Result<Texture, GlError> {
+        let image = DecodedImage {
+            width: 1,
+            height: 1,
+            rgba: vec![255, 255, 255, 255],
+        };
+        Texture::upload(gl, &image)
+    }
 
-impl TextureManager {
-    pub fn new(gl: Rc<glow::Context>) -> Self {
-        Self {
-            gl,
-            cache: HashMap::new(),
+    /// Loads and uploads the image at `path`, falling back to
+    /// [`Texture::white`] if it is missing or undecodable so geometry stays
+    /// visible.
+    pub fn load_or_white(
+        gl: &Rc<glow::Context>,
+        path: &Path,
+        mode: ProcessMode,
+    ) -> Result<Texture, GlError> {
+        match std::fs::read(path).ok().and_then(|b| decode_image(&b, mode).ok()) {
+            Some(image) => Texture::upload(gl, &image),
+            None => {
+                eprintln!("warning: texture {} unavailable, using white", path.display());
+                Texture::white(gl)
+            }
         }
     }
 
-    /// Loads (or returns the cached) texture at `path`. On a miss, reads the
-    /// file, decodes per `mode`, and uploads a full mip chain. Runtime-only.
-    pub fn load(&mut self, path: &Path, mode: ProcessMode) -> Result<&Texture, GlError> {
-        if !self.cache.contains_key(path) {
-            let bytes = std::fs::read(path)
-                .map_err(|e| GlError::Context(format!("cannot read {}: {e}", path.display())))?;
-            let image = decode_image(&bytes, mode)
-                .map_err(|e| GlError::Context(format!("{}: {e}", path.display())))?;
-            let texture = Texture::upload(&self.gl, &image)?;
-            self.cache.insert(path.to_path_buf(), texture);
-        }
-        Ok(&self.cache[path])
+    /// Binds to `GL_TEXTURE_2D` on the active unit.
+    pub fn bind(&self) {
+        unsafe { self.gl.bind_texture(glow::TEXTURE_2D, Some(self.handle)) };
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        unsafe { self.gl.delete_texture(self.handle) };
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn texture_path(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -188,7 +194,7 @@ mod tests {
         for name in ["Brick.png", "Steel.png", "Ceiling.png"] {
             let img = decode_file(name, ProcessMode::NoAlpha);
             assert_eq!((img.width, img.height), (32, 32), "{name}");
-            assert!(img.rgba.chunks_exact(4).all(|p| p[3] == 0xFF), "{name} must be opaque");
+            assert!(img.rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 0xFF), "{name} must be opaque");
         }
     }
 
@@ -199,11 +205,11 @@ mod tests {
         // every texel opaque.
         let kept = decode_file("Smoke.png", ProcessMode::UseAlpha);
         assert!(
-            kept.rgba.chunks_exact(4).any(|p| p[3] != 0xFF),
+            kept.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0xFF),
             "UseAlpha must keep the sprite's transparency"
         );
         let forced = decode_file("Smoke.png", ProcessMode::NoAlpha);
-        assert!(forced.rgba.chunks_exact(4).all(|p| p[3] == 0xFF));
+        assert!(forced.rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 0xFF));
     }
 
     #[test]

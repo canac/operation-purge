@@ -1,17 +1,16 @@
-//! `Mesh<V: Pod>`: VBO/EBO wrapper with `u16` indices, replacing
-//! `cObject3D<V>` (design §2, §3.5).
+//! `Mesh<V>`: VAO + VBO + `u16` EBO, replacing `cObject3D<V>`.
 //!
-//! GUARD (design §1.3): building meshes keep 16-bit indices
-//! (`wallSegments*4+8` verts); a mesh that would overflow `u16` is a
-//! clean `GlError::TooManyVertices` at load time instead of the silent
-//! corruption a fixed-size index buffer would otherwise produce.
+//! GUARD: building meshes keep 16-bit indices (`wallSegments*4+8` verts); a
+//! mesh that would overflow `u16` is a clean `GlError::TooManyVertices` at
+//! load time instead of the silent corruption a fixed-size index buffer
+//! would otherwise produce.
 //!
 //! Triangle fans (the barrel cap, `cRobot3D`) are converted to indexed
-//! triangle lists at geometry-build time (design §3.5/§1.5.13) — GL core
-//! has `GL_TRIANGLE_FAN`, but converting keeps one batching path and stays
-//! backend-portable. [`triangle_fan_to_list`] is the pure, unit-tested
-//! conversion.
+//! triangle lists at geometry-build time — GL core has `GL_TRIANGLE_FAN`, but
+//! converting keeps one batching path. [`triangle_fan_to_list`] is the pure,
+//! unit-tested conversion.
 
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 use bytemuck::{Pod, Zeroable};
@@ -29,8 +28,8 @@ pub struct VertexPos {
 /// pos+normal (24 B) — lit, untextured (robot parts, center markers).
 ///
 /// PARITY: normals are stored and uploaded exactly as computed — never
-/// normalized in the shader either (design §3.4 `prog_lit`: dome normals
-/// of length 0.08-0.5 intentionally dim the lighting).
+/// normalized in the shader either (dome normals of length 0.08-0.5
+/// intentionally dim the lighting).
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct VertexLit {
@@ -47,10 +46,10 @@ pub struct VertexLitTextured {
     pub uv: [f32; 2],
 }
 
-/// pos + rgba8 (4x u8 normalized) + uv (24 B) — sprites, HUD text.
+/// pos + rgba8 (4x u8 normalized) + uv (24 B) — sprites.
 ///
-/// The D3DCOLOR B,G,R,A memory-order hazard (source-map §5.7) never
-/// exists here: color is stored as plain RGBA bytes in Rust-native order.
+/// Color is plain RGBA bytes, so the D3DCOLOR B,G,R,A memory-order hazard
+/// never exists here.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct VertexSprite {
@@ -62,12 +61,20 @@ pub struct VertexSprite {
 /// Maximum vertex count a `u16`-indexed mesh can hold.
 pub const MAX_VERTICES: usize = u16::MAX as usize + 1;
 
-/// Describes a vertex type's GL attribute layout so [`Mesh`]/[`DynamicMesh`]
-/// can configure the VAO generically. Implemented for each of the four
-/// vertex structs above (matching the four original FVFs, design §3.4).
+/// The u16 GUARD: `Ok` iff `count` vertices are addressable by `u16` indices.
+pub fn check_vertex_count(count: usize) -> Result<(), GlError> {
+    if count > MAX_VERTICES {
+        return Err(GlError::TooManyVertices { count });
+    }
+    Ok(())
+}
+
+/// Describes a vertex type's GL attribute layout so [`Mesh`] can configure
+/// the VAO generically. Implemented for each of the four vertex structs
+/// above (matching the four original FVFs).
 pub trait VertexLayout: Pod {
     /// Configures `glVertexAttribPointer` calls for a currently-bound VAO +
-    /// VBO. Runtime-only (needs a current GL context).
+    /// VBO.
     ///
     /// # Safety
     /// A VAO and the vertex VBO must be bound; `gl` must be current.
@@ -117,10 +124,10 @@ impl VertexLayout for VertexSprite {
     }
 }
 
-/// Converts a triangle-fan index run to an indexed triangle list
-/// (`cRobot3D` barrel cap, design §3.5). A fan `[c, v0, v1, v2, ...]`
-/// becomes triangles `(c, v0, v1), (c, v1, v2), ...` preserving winding.
-/// Fewer than 3 vertices yields no triangles.
+/// Converts a triangle-fan index run to an indexed triangle list (`cRobot3D`
+/// barrel cap). A fan `[c, v0, v1, v2, ...]` becomes triangles
+/// `(c, v0, v1), (c, v1, v2), ...` preserving winding. Fewer than 3 vertices
+/// yields no triangles.
 pub fn triangle_fan_to_list(fan: &[u16]) -> Vec<u16> {
     if fan.len() < 3 {
         return Vec::new();
@@ -135,202 +142,135 @@ pub fn triangle_fan_to_list(fan: &[u16]) -> Vec<u16> {
     out
 }
 
-/// A uploaded static mesh: VAO + VBO + `u16` EBO. Constructed CPU-side
-/// (validating the u16 GUARD), then [`upload`](Mesh::upload)ed at runtime.
-pub struct Mesh<V: Pod> {
-    pub vertices: Vec<V>,
-    pub indices: Vec<u16>,
-    gl_handles: Option<GlBuffers>,
-}
-
-struct GlBuffers {
+/// An uploaded mesh: VAO + VBO + `u16` EBO, deleted on drop. Runtime-only
+/// (needs a current GL context).
+pub struct Mesh<V> {
     gl: Rc<glow::Context>,
     vao: glow::VertexArray,
     vbo: glow::Buffer,
     ebo: glow::Buffer,
-    index_count: i32,
-}
-
-impl<V: Pod> Mesh<V> {
-    pub fn new(vertices: Vec<V>, indices: Vec<u16>) -> Result<Self, GlError> {
-        if vertices.len() > MAX_VERTICES {
-            return Err(GlError::TooManyVertices {
-                count: vertices.len(),
-            });
-        }
-        Ok(Self {
-            vertices,
-            indices,
-            gl_handles: None,
-        })
-    }
+    index_count: usize,
+    vertex_capacity: usize,
+    _vertex: PhantomData<V>,
 }
 
 impl<V: VertexLayout> Mesh<V> {
-    /// Uploads to a VAO/VBO/EBO. Runtime-only (needs a current GL context).
-    pub fn upload(&mut self, gl: Rc<glow::Context>) -> Result<(), GlError> {
+    /// Uploads static vertices + indices.
+    pub fn new(gl: Rc<glow::Context>, vertices: &[V], indices: &[u16]) -> Result<Self, GlError> {
+        check_vertex_count(vertices.len())?;
+        let mesh = Self::alloc(gl, vertices.len(), indices)?;
+        unsafe {
+            mesh.gl.bind_buffer(glow::ARRAY_BUFFER, Some(mesh.vbo));
+            mesh.gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(vertices),
+                glow::STATIC_DRAW,
+            );
+        }
+        Ok(mesh)
+    }
+
+    /// Allocates a stream vertex buffer of `vertex_capacity` vertices behind
+    /// static `indices`; fill it each frame with [`Mesh::refill`].
+    pub fn dynamic(
+        gl: Rc<glow::Context>,
+        vertex_capacity: usize,
+        indices: &[u16],
+    ) -> Result<Self, GlError> {
+        check_vertex_count(vertex_capacity)?;
+        let mesh = Self::alloc(gl, vertex_capacity, indices)?;
+        mesh.orphan();
+        Ok(mesh)
+    }
+
+    fn alloc(gl: Rc<glow::Context>, vertex_capacity: usize, indices: &[u16]) -> Result<Self, GlError> {
         unsafe {
             let vao = gl
                 .create_vertex_array()
                 .map_err(|e| GlError::Context(format!("mesh vao: {e}")))?;
-            let vbo = gl
-                .create_buffer()
-                .map_err(|e| GlError::Context(format!("mesh vbo: {e}")))?;
-            let ebo = gl
-                .create_buffer()
-                .map_err(|e| GlError::Context(format!("mesh ebo: {e}")))?;
-            gl.bind_vertex_array(Some(vao));
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                bytemuck::cast_slice(&self.vertices),
-                glow::STATIC_DRAW,
-            );
-            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(ebo));
-            gl.buffer_data_u8_slice(
-                glow::ELEMENT_ARRAY_BUFFER,
-                bytemuck::cast_slice(&self.indices),
-                glow::STATIC_DRAW,
-            );
-            V::configure_attribs(&gl);
-            gl.bind_vertex_array(None);
-            self.gl_handles = Some(GlBuffers {
+            let mesh = Self {
+                vbo: gl.create_buffer().map_err(|e| GlError::Context(format!("mesh vbo: {e}")))?,
+                ebo: gl.create_buffer().map_err(|e| GlError::Context(format!("mesh ebo: {e}")))?,
                 gl,
                 vao,
-                vbo,
-                ebo,
-                index_count: self.indices.len() as i32,
-            });
+                index_count: indices.len(),
+                vertex_capacity,
+                _vertex: PhantomData,
+            };
+            let gl = &mesh.gl;
+            gl.bind_vertex_array(Some(mesh.vao));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(mesh.vbo));
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(mesh.ebo));
+            gl.buffer_data_u8_slice(
+                glow::ELEMENT_ARRAY_BUFFER,
+                bytemuck::cast_slice(indices),
+                glow::STATIC_DRAW,
+            );
+            V::configure_attribs(gl);
+            gl.bind_vertex_array(None);
+            Ok(mesh)
         }
-        Ok(())
     }
 
-    /// Draws the index range `[start, start + count)` with `primitive`.
-    /// Runtime-only; no-op if not yet uploaded. `start`/`count` are index
-    /// counts.
-    fn draw_primitive(&self, primitive: u32, start: usize, count: usize) {
-        let Some(h) = self.gl_handles.as_ref() else {
-            return;
-        };
+    /// Discards the vertex storage (`glBufferData(NULL)`), the GL twin of
+    /// D3D's `Lock DISCARD`.
+    fn orphan(&self) {
         unsafe {
-            h.gl.bind_vertex_array(Some(h.vao));
-            h.gl.draw_elements(
+            self.gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
+            self.gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (self.vertex_capacity * std::mem::size_of::<V>()) as i32,
+                glow::STREAM_DRAW,
+            );
+        }
+    }
+
+    /// Orphans the vertex buffer and refills its front with `vertices`
+    /// (at most the capacity given to [`Mesh::dynamic`]).
+    pub fn refill(&self, vertices: &[V]) {
+        debug_assert!(vertices.len() <= self.vertex_capacity);
+        self.orphan();
+        unsafe {
+            self.gl
+                .buffer_sub_data_u8_slice(glow::ARRAY_BUFFER, 0, bytemuck::cast_slice(vertices));
+        }
+    }
+
+    fn draw_primitive(&self, primitive: u32, start: usize, count: usize) {
+        unsafe {
+            self.gl.bind_vertex_array(Some(self.vao));
+            self.gl.draw_elements(
                 primitive,
                 count as i32,
                 glow::UNSIGNED_SHORT,
                 (start * std::mem::size_of::<u16>()) as i32,
             );
-            h.gl.bind_vertex_array(None);
+            self.gl.bind_vertex_array(None);
         }
     }
 
     /// Draws the index range `[start, start + count)` as `GL_TRIANGLES`.
-    /// Runtime-only; no-op if not yet uploaded. `start`/`count` are index
-    /// (not triangle) counts — matches the building's three draw ranges.
     pub fn draw_range(&self, start: usize, count: usize) {
         self.draw_primitive(glow::TRIANGLES, start, count);
     }
 
     /// Draws the index range `[start, start + count)` as `GL_LINES` (pairs).
-    /// Runtime-only; no-op if not yet uploaded. Used by the 2D-map wall
-    /// outline + crosshair (`render::overlay`).
     pub fn draw_lines_range(&self, start: usize, count: usize) {
         self.draw_primitive(glow::LINES, start, count);
     }
 
-    /// Draws all indices as `GL_TRIANGLES`. Runtime-only.
+    /// Draws all indices as `GL_TRIANGLES`.
     pub fn draw(&self) {
-        if let Some(h) = self.gl_handles.as_ref() {
-            self.draw_range(0, h.index_count as usize);
-        }
+        self.draw_range(0, self.index_count);
     }
 }
 
-impl<V: Pod> Drop for Mesh<V> {
+impl<V> Drop for Mesh<V> {
     fn drop(&mut self) {
-        if let Some(h) = self.gl_handles.as_ref() {
-            unsafe {
-                h.gl.delete_vertex_array(h.vao);
-                h.gl.delete_buffer(h.vbo);
-                h.gl.delete_buffer(h.ebo);
-            }
-        }
-    }
-}
-
-/// Dynamic (per-frame-refilled) mesh using buffer orphaning
-/// (`glBufferData(NULL)` then fill — the GL twin of D3D's `Lock DISCARD`,
-/// design §3.5). Used by the sprite batcher (M5). Runtime-only.
-pub struct DynamicMesh<V: Pod> {
-    pub capacity: usize,
-    gl: Option<Rc<glow::Context>>,
-    vao: Option<glow::VertexArray>,
-    vbo: Option<glow::Buffer>,
-    _marker: std::marker::PhantomData<V>,
-}
-
-impl<V: VertexLayout> DynamicMesh<V> {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            capacity,
-            gl: None,
-            vao: None,
-            vbo: None,
-            _marker: std::marker::PhantomData,
-        }
-    }
-
-    /// Allocates the VAO/VBO sized for `capacity` verts. Runtime-only.
-    pub fn upload(&mut self, gl: Rc<glow::Context>) -> Result<(), GlError> {
         unsafe {
-            let vao = gl
-                .create_vertex_array()
-                .map_err(|e| GlError::Context(format!("dyn vao: {e}")))?;
-            let vbo = gl
-                .create_buffer()
-                .map_err(|e| GlError::Context(format!("dyn vbo: {e}")))?;
-            gl.bind_vertex_array(Some(vao));
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (self.capacity * std::mem::size_of::<V>()) as i32,
-                glow::STREAM_DRAW,
-            );
-            V::configure_attribs(&gl);
-            gl.bind_vertex_array(None);
-            self.gl = Some(gl);
-            self.vao = Some(vao);
-            self.vbo = Some(vbo);
-        }
-        Ok(())
-    }
-
-    /// Orphans (discards) the buffer then refills it with `vertices`
-    /// (design §3.5). Runtime-only; no-op if not uploaded.
-    pub fn orphan_and_fill(&mut self, vertices: &[V]) {
-        let (Some(gl), Some(vbo)) = (self.gl.as_ref(), self.vbo) else {
-            return;
-        };
-        unsafe {
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-            // Orphan: reallocate with NULL, then upload — Lock DISCARD twin.
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (self.capacity * std::mem::size_of::<V>()) as i32,
-                glow::STREAM_DRAW,
-            );
-            gl.buffer_sub_data_u8_slice(glow::ARRAY_BUFFER, 0, bytemuck::cast_slice(vertices));
-        }
-    }
-}
-
-impl<V: Pod> Drop for DynamicMesh<V> {
-    fn drop(&mut self) {
-        if let (Some(gl), Some(vao), Some(vbo)) = (self.gl.as_ref(), self.vao, self.vbo) {
-            unsafe {
-                gl.delete_vertex_array(vao);
-                gl.delete_buffer(vbo);
-            }
+            self.gl.delete_vertex_array(self.vao);
+            self.gl.delete_buffer(self.vbo);
+            self.gl.delete_buffer(self.ebo);
         }
     }
 }
@@ -349,20 +289,19 @@ mod tests {
 
     #[test]
     fn oversized_mesh_is_a_clean_error() {
-        let verts = vec![VertexPos { position: [0.0; 3] }; MAX_VERTICES + 1];
-        let result = Mesh::new(verts, vec![]);
-        assert!(matches!(result, Err(GlError::TooManyVertices { .. })));
+        assert!(matches!(
+            check_vertex_count(MAX_VERTICES + 1),
+            Err(GlError::TooManyVertices { .. })
+        ));
     }
 
     #[test]
     fn exactly_max_vertices_is_allowed() {
-        let verts = vec![VertexPos { position: [0.0; 3] }; MAX_VERTICES];
-        assert!(Mesh::new(verts, vec![]).is_ok());
+        assert!(check_vertex_count(MAX_VERTICES).is_ok());
     }
 
     #[test]
     fn fan_of_four_becomes_two_triangles() {
-        // Fan [c, a, b, d] -> (c,a,b),(c,b,d).
         assert_eq!(
             triangle_fan_to_list(&[0, 1, 2, 3]),
             vec![0, 1, 2, 0, 2, 3]
@@ -371,7 +310,6 @@ mod tests {
 
     #[test]
     fn fan_of_n_becomes_n_minus_2_triangles_preserving_winding() {
-        // A 6-vertex fan (center + 5 rim) => 4 triangles => 12 indices.
         let fan = [10u16, 11, 12, 13, 14, 15];
         let tris = triangle_fan_to_list(&fan);
         assert_eq!(tris.len(), 12);

@@ -1,6 +1,6 @@
 //! Procedural building geometry: wall extrusion, floor/ceiling, ported
 //! verbatim from `cBuilding3D::CreateVerticesAndIndices`
-//! (`cBuilding3D.cpp:100-289`, source-map §3.3).
+//! (`cBuilding3D.cpp:100-289`).
 //!
 //! PARITY: the first (outer boundary) polygon gets **reversed winding**
 //! (`cBuilding3D.cpp:187-193` — "For the first polygon, the vertices order
@@ -15,9 +15,15 @@
 //! [`BuildingGeometry`] mirror the original's three `DrawIndexedPrimitive`
 //! calls (`cBuilding3D.cpp:82-99`).
 
+use std::rc::Rc;
+
 use crate::error::GlError;
+use crate::math::Rgba;
 use crate::maze::building::{Building, WallDir};
-use crate::render::mesh::{Mesh, VertexLitTextured};
+use crate::render::mesh::{check_vertex_count, Mesh, VertexLitTextured};
+use crate::render::scene::FrameMatrices;
+use crate::render::shaders::Program;
+use crate::render::textures::Texture;
 
 /// The extruded building geometry plus the three draw ranges (walls, floor,
 /// ceiling) the renderer issues as separate texture-bound draws.
@@ -33,7 +39,7 @@ pub struct BuildingGeometry {
 }
 
 /// Extrudes wall polylines + floor/ceiling into CPU-side vertex/index
-/// buffers. Pure (no GL) — the headless correctness proxy for the M4 gate.
+/// buffers. Pure (no GL).
 ///
 /// `*_texture_size` are the `[building]` `fWallTextureSize` etc.; UV =
 /// span / texture_size (`cBuilding3D.cpp:126-127,215-217,257-259`).
@@ -46,11 +52,7 @@ pub fn build_geometry(
     let (polygons, wall_segments) = building.wall_polygons();
 
     let n_vertices = wall_segments * 4 + 8;
-    // GUARD (design §1.3): u16 indices are kept; a building whose vertex
-    // count would overflow u16 is a clean error, not silent corruption.
-    if n_vertices > u16::MAX as usize + 1 {
-        return Err(GlError::TooManyVertices { count: n_vertices });
-    }
+    check_vertex_count(n_vertices)?;
 
     let mut vertices: Vec<VertexLitTextured> = Vec::with_capacity(n_vertices);
     let mut indices: Vec<u16> = Vec::with_capacity(wall_segments * 6 + 12);
@@ -202,139 +204,52 @@ fn push_quad(
     });
 }
 
-/// Extrudes into one static `Mesh<VertexLitTextured>` for GL upload. The
-/// draw ranges are recomputed by the caller via [`build_geometry`] when it
-/// needs them for the three separate texture-bound draws.
-pub fn build_mesh(
-    building: &Building,
-    wall_texture_size: f32,
-    floor_texture_size: f32,
-    ceiling_texture_size: f32,
-) -> Result<Mesh<VertexLitTextured>, GlError> {
-    let geo = build_geometry(
-        building,
-        wall_texture_size,
-        floor_texture_size,
-        ceiling_texture_size,
-    )?;
-    Mesh::new(geo.vertices, geo.indices)
+/// The three building textures, one per draw range.
+pub struct BuildingTextures {
+    pub wall: Texture,
+    pub floor: Texture,
+    pub ceiling: Texture,
 }
 
-// ---------------------------------------------------------------------------
-// Runtime renderer (M4 winding gate) — compiled but exercised only at a
-// real display; the headless suite covers the geometry above.
-// ---------------------------------------------------------------------------
+/// The `[building]` texture sizes (`fWallTextureSize` etc.) the UVs divide by.
+#[derive(Copy, Clone, Debug)]
+pub struct TextureSizes {
+    pub wall: f32,
+    pub floor: f32,
+    pub ceiling: f32,
+}
 
-use std::rc::Rc;
-
-use glow::HasContext;
-
-use crate::render::camera::{DrawCategory, FreeFlyCamera, WindingGate};
-use crate::render::gl::GlState;
-use crate::render::shaders::{self, Programs};
-
-/// Owns the uploaded building mesh + its three draw ranges + one texture per
-/// draw category, and draws them with `prog_lit_tex` under the M4 debug
-/// camera and winding gate. Runtime-only.
+/// Owns the uploaded building mesh + its three draw ranges and draws them
+/// with `prog_lit_tex`. Runtime-only.
 pub struct BuildingRenderer {
     mesh: Mesh<VertexLitTextured>,
     wall_index_count: usize,
     floor_index_start: usize,
     ceiling_index_start: usize,
-    wall_tex: glow::Texture,
-    floor_tex: glow::Texture,
-    ceiling_tex: glow::Texture,
 }
 
 impl BuildingRenderer {
-    /// Builds + uploads the mesh and takes the three textures (already
-    /// uploaded; `glow::Texture` is a copyable handle). Runtime-only.
-    pub fn new(
-        gl: Rc<glow::Context>,
-        building: &Building,
-        wall_texture_size: f32,
-        floor_texture_size: f32,
-        ceiling_texture_size: f32,
-        wall_tex: glow::Texture,
-        floor_tex: glow::Texture,
-        ceiling_tex: glow::Texture,
-    ) -> Result<Self, GlError> {
-        let geo = build_geometry(
-            building,
-            wall_texture_size,
-            floor_texture_size,
-            ceiling_texture_size,
-        )?;
-        let mut mesh = Mesh::new(geo.vertices, geo.indices)?;
-        mesh.upload(gl)?;
+    pub fn new(gl: Rc<glow::Context>, building: &Building, sizes: TextureSizes) -> Result<Self, GlError> {
+        let geo = build_geometry(building, sizes.wall, sizes.floor, sizes.ceiling)?;
         Ok(Self {
-            mesh,
+            mesh: Mesh::new(gl, &geo.vertices, &geo.indices)?,
             wall_index_count: geo.wall_index_count,
             floor_index_start: geo.floor_index_start,
             ceiling_index_start: geo.ceiling_index_start,
-            wall_tex,
-            floor_tex,
-            ceiling_tex,
         })
     }
 
-    /// Draws the building with `prog_lit_tex`, applying the debug winding
-    /// gate + category isolation. Runtime-only.
-    pub fn render(
-        &self,
-        gl_state: &mut GlState,
-        programs: &Programs,
-        camera: &FreeFlyCamera,
-        aspect: f32,
-        gate: &WindingGate,
-    ) {
-        gl_state.set_winding(gate.decision());
-        let gl = Rc::clone(gl_state.context());
-        let prog = &programs.lit_textured;
-
-        let view = camera.view();
-        let mvp = camera.view_projection(aspect); // world = identity
-
-        unsafe {
-            gl.use_program(Some(prog.program));
-            if let Some(loc) = prog.uniform("u_mvp") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &mvp.to_row_major_array());
-            }
-            if let Some(loc) = prog.uniform("u_world_view") {
-                gl.uniform_matrix_4_f32_slice(Some(&loc), false, &view.to_row_major_array());
-            }
-            if let Some(loc) = prog.uniform("u_material") {
-                // Building material is white (cBuilding3D.cpp:78 SetColor 0xFFFFFFFF).
-                gl.uniform_3_f32(Some(&loc), 1.0, 1.0, 1.0);
-            }
-            if let Some(loc) = prog.uniform("u_light_atten") {
-                let a = shaders::light_atten_uniform();
-                gl.uniform_3_f32(Some(&loc), a[0], a[1], a[2]);
-            }
-            if let Some(loc) = prog.uniform("u_tex") {
-                gl.uniform_1_i32(Some(&loc), 0);
-            }
-            gl.active_texture(glow::TEXTURE0);
-        }
-
-        if gate.should_draw(DrawCategory::Walls) {
-            unsafe {
-                gl.bind_texture(glow::TEXTURE_2D, Some(self.wall_tex));
-            }
-            self.mesh.draw_range(0, self.wall_index_count);
-        }
-        if gate.should_draw(DrawCategory::Floor) {
-            unsafe {
-                gl.bind_texture(glow::TEXTURE_2D, Some(self.floor_tex));
-            }
-            self.mesh.draw_range(self.floor_index_start, 6);
-        }
-        if gate.should_draw(DrawCategory::Ceiling) {
-            unsafe {
-                gl.bind_texture(glow::TEXTURE_2D, Some(self.ceiling_tex));
-            }
-            self.mesh.draw_range(self.ceiling_index_start, 6);
-        }
+    /// `cBuilding3D::Render` (`cBuilding3D.cpp:72-99`): identity world, white
+    /// material, then walls, floor, ceiling each with its own texture.
+    pub fn render(&self, prog: &Program, frame: &FrameMatrices, textures: &BuildingTextures) {
+        prog.bind_lit();
+        prog.set_lit(&frame.view_proj, &frame.view, Rgba::new(1.0, 1.0, 1.0, 1.0));
+        textures.wall.bind();
+        self.mesh.draw_range(0, self.wall_index_count);
+        textures.floor.bind();
+        self.mesh.draw_range(self.floor_index_start, 6);
+        textures.ceiling.bind();
+        self.mesh.draw_range(self.ceiling_index_start, 6);
     }
 }
 
@@ -416,12 +331,5 @@ mod tests {
         assert_eq!(geo.vertices[19].uv, [5.0, 5.0]);
         // Ceiling repeat = size 10 / 8.0 = 1.25.
         assert_eq!(geo.vertices[23].uv, [1.25, 1.25]);
-    }
-
-    #[test]
-    fn build_mesh_wraps_into_a_u16_mesh() {
-        let mesh = build_mesh(&one_room_bordered(), 1.0, 1.0, 1.0).unwrap();
-        assert_eq!(mesh.vertices.len(), 24);
-        assert_eq!(mesh.indices.len(), 36);
     }
 }

@@ -1,6 +1,7 @@
 //! Shared math helpers ported from `Functions.h/.cpp`, plus the `Rgba`
 //! color type used by `data/` and `render/`.
 
+pub mod camera;
 pub mod d3dx;
 pub mod intersect;
 

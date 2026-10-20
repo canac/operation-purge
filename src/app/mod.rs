@@ -21,8 +21,6 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowId;
 
-use glam::Vec3;
-
 use crate::data::GameData;
 use crate::game::newgame::{NewGame, NewGameOutcome, NewGameParams};
 use crate::game::screens::{ConfirmAction, ConfirmChoice};
@@ -33,19 +31,9 @@ use crate::input::keys::Key;
 use crate::input::Input;
 use crate::rng::GameRng;
 use crate::math::Rgba;
-use crate::maze::building::Building;
 use crate::maze::Maze;
-use crate::render::building3d::BuildingRenderer;
-use crate::render::camera::WindingGate;
-use crate::render::center3d::{CenterRenderData, CenterRenderer};
-use crate::render::overlay::{
-    MapCenterData, MapColors, MapMode, MapRobotData, MapView, Overlay2DRenderer,
-};
-use crate::render::robot3d::{RobotRenderData, RobotRenderer};
-use crate::render::shaders::{compile_all, Programs};
-use crate::render::sprites::{Axis, SpriteBatch, SpriteData, SpriteRenderer};
+use crate::render::scene::{frame_view, SceneRenderer};
 use crate::render::text::{GlyphAtlas, TextRenderer};
-use crate::render::textures::{DecodedImage, ProcessMode, Texture};
 use config::Config;
 use window::RenderWindow;
 
@@ -90,15 +78,7 @@ pub struct AppRunner {
     atlas: Option<GlyphAtlas>,
     text: Option<TextRenderer>,
     hud_scale_is_auto: bool,
-    // Scene renderers.
-    programs: Option<Programs>,
-    building: Option<BuildingRenderer>,
-    robot: Option<RobotRenderer>,
-    center: Option<CenterRenderer>,
-    overlay: Option<Overlay2DRenderer>,
-    sprites: Option<SpriteRenderer>,
-    sprite_textures: Option<SpriteTextures>,
-    gate: WindingGate,
+    scene: Option<SceneRenderer>,
     // The live game (world + screens + camera + speed + timers).
     game: Option<Game>,
     audio: Option<GameAudio>,
@@ -163,14 +143,7 @@ impl AppRunner {
             atlas: None,
             text: None,
             hud_scale_is_auto,
-            programs: None,
-            building: None,
-            robot: None,
-            center: None,
-            overlay: None,
-            sprites: None,
-            sprite_textures: None,
-            gate: WindingGate::default(),
+            scene: None,
             game: None,
             audio: None,
             init_error: None,
@@ -196,13 +169,13 @@ impl AppRunner {
         })
     }
 
-    /// Compile the four shader programs (once, at window creation). Runtime
-    /// only; records a message on failure rather than crashing.
+    /// Build the scene renderer (once, at window creation). Runtime only;
+    /// records a message on failure rather than crashing.
     fn init_gl(&mut self, win: &RenderWindow) {
-        let ctx = win.context();
-        match compile_all(ctx) {
-            Ok(p) => self.programs = Some(p),
-            Err(e) => self.init_error = Some(format!("shader compile failed: {e}")),
+        let textures = std::path::Path::new(&self.config.assets_dir).join("Textures");
+        match SceneRenderer::new(win.context(), &textures) {
+            Ok(scene) => self.scene = Some(scene),
+            Err(e) => self.init_error = Some(format!("renderer init failed: {e}")),
         }
     }
 
@@ -225,58 +198,22 @@ impl AppRunner {
     /// params (`SetGameParams` + `StartGame`, `cOperationPurge.cpp:104-306`).
     /// The maze/game/team come from the New Game screen, not a fixed file.
     fn start_new_game(&mut self, params: &NewGameParams) {
-        let Some(win) = self.window.as_ref() else {
+        if self.window.is_none() {
             return;
-        };
-        let ctx = win.context();
+        }
         let Some(data) = self.game_data.clone() else {
             self.init_error = Some("no GameData.toml — game not started".into());
             return;
         };
 
         let assets = std::path::Path::new(&self.config.assets_dir).to_path_buf();
-        // `Maze` is not `Clone`, so load it twice — once for the world, once
-        // for the renderer's `Building`.
-        let (maze, maze_render) =
-            match (Maze::load(&params.maze_path), Maze::load(&params.maze_path)) {
-                (Ok(m), Ok(m2)) => (m, m2),
-                (Err(e), _) | (_, Err(e)) => {
-                    self.init_error = Some(format!("maze load failed: {e}"));
-                    return;
-                }
-            };
-
-        let b = data.building.clone();
-        let building = Building {
-            maze: maze_render,
-            wall_width: b.wall_width,
-            room_size: b.room_size,
-            ceiling_height: b.ceiling_height,
+        let maze = match Maze::load(&params.maze_path) {
+            Ok(m) => m,
+            Err(e) => {
+                self.init_error = Some(format!("maze load failed: {e}"));
+                return;
+            }
         };
-
-        // Textures for the building (white fallback so geometry is visible).
-        // Filenames are compiled in (`data::assets::names`), not read from data.
-        use crate::data::assets::names;
-        let tex_dir = assets.join("Textures");
-        let load_tex_mode = |name: &str, mode: ProcessMode| -> glow::Texture {
-            let path = tex_dir.join(name);
-            std::fs::read(&path)
-                .ok()
-                .and_then(|bytes| crate::render::textures::decode_image(&bytes, mode).ok())
-                .and_then(|img| Texture::upload(&ctx, &img).ok())
-                .unwrap_or_else(|| white_texture(&ctx))
-                .handle
-        };
-        let load_tex = |name: &str| load_tex_mode(name, ProcessMode::NoAlpha);
-        let wall_tex = load_tex(names::WALL_TEXTURE);
-        let floor_tex = load_tex(names::FLOOR_TEXTURE);
-        let ceiling_tex = load_tex(names::CEILING_TEXTURE);
-        self.sprite_textures = Some(SpriteTextures {
-            projectile: load_tex_mode(names::PROJECTILE_TEXTURE, ProcessMode::UseAlpha),
-            hole: load_tex_mode(names::HOLE_TEXTURE, ProcessMode::UseAlpha),
-            smoke: load_tex_mode(names::SMOKE_TEXTURE, ProcessMode::UseAlpha),
-            white: white_texture(&ctx).handle,
-        });
 
         // Build the world + game.
         let seed = self.resolve_seed();
@@ -292,36 +229,14 @@ impl AppRunner {
         game.cheats_enabled = params.cheats_enabled;
         self.game = Some(game);
 
-        // Scene renderers.
-        match BuildingRenderer::new(
-            ctx.clone(),
-            &building,
-            b.wall_texture_size,
-            b.floor_texture_size,
-            b.ceiling_texture_size,
-            wall_tex,
-            floor_tex,
-            ceiling_tex,
-        ) {
-            Ok(r) => self.building = Some(r),
-            Err(e) => self.init_error = Some(format!("building mesh failed: {e}")),
-        }
-        match RobotRenderer::new(ctx.clone(), &crate::data::builtin::OBJECTS) {
-            Ok(r) => self.robot = Some(r),
-            Err(e) => self.init_error = Some(format!("robot mesh failed: {e}")),
-        }
-        match Overlay2DRenderer::new(ctx.clone(), &building, &crate::data::builtin::OBJECTS) {
-            Ok(o) => self.overlay = Some(o),
-            Err(e) => self.init_error = Some(format!("2D map mesh failed: {e}")),
-        }
-        match CenterRenderer::new(ctx.clone()) {
-            Ok(c) => self.center = Some(c),
-            Err(e) => self.init_error = Some(format!("center mesh failed: {e}")),
-        }
-        match SpriteRenderer::new(ctx) {
-            Ok(r) => self.sprites = Some(r),
-            Err(e) => self.init_error = Some(format!("sprite renderer failed: {e}")),
-        }
+        let render_error = match (self.scene.as_mut(), self.game.as_ref()) {
+            (Some(scene), Some(game)) => scene
+                .load_building(&game.world.building, &data.building)
+                .err()
+                .map(|e| format!("scene build failed: {e}")),
+            // Keep the renderer-init failure visible.
+            _ => self.init_error.take(),
+        };
 
         // Audio (device open + preload). Best-effort: a headless/no-device
         // machine simply runs muted.
@@ -338,7 +253,7 @@ impl AppRunner {
 
         // Leave the New Game screen; the game begins on the 2D map at speed 0.
         self.new_game = None;
-        self.init_error = None;
+        self.init_error = render_error;
     }
 
     /// Dispatch a New Game OK/Cancel outcome. Returns `true` if the app should
@@ -539,49 +454,16 @@ impl AppRunner {
         // New Game screen text (built while the game is frozen / absent).
         let new_game_lines = self.new_game.as_ref().map(|ng| self.new_game_lines(ng));
 
-        // Scene + HUD snapshot (immutable game borrow before the mutable GL
-        // borrow). Skipped while the New Game screen is up.
-        let scene = if new_game_lines.is_none() {
-            self.game.as_ref().map(|game| {
-                (
-                    game.camera(),
-                    self.collect_robot_render_data(game),
-                    self.collect_center_render_data(game),
-                    game.status_text(),
-                    game.confirm_kind().map(|k| k.prompt()),
-                    self.collect_sprite_batches(game),
-                )
-            })
-        } else {
-            None
-        };
+        // Frame snapshot (immutable game borrow before the mutable GL borrow).
+        // Skipped while the New Game screen is up.
+        let active_game = self.game.as_ref().filter(|_| new_game_lines.is_none());
+        let frame = active_game.map(frame_view);
+        let hud = active_game.map(|game| (game.status_text(), game.confirm_kind().map(|k| k.prompt())));
         let profiler_lines = if self.profiler_visible && new_game_lines.is_none() {
             Some(profiler_pane_lines())
         } else {
             None
         };
-
-        // 2D-map snapshot (`Render2D`): full-screen in Map2D, the minimap in
-        // 3D while `m_bShowMap`, plus the crosshair in 3D.
-        let active_game = self.game.as_ref().filter(|_| new_game_lines.is_none());
-        let in_2d = active_game.is_some_and(Game::shows_2d);
-        let show_minimap = active_game.is_some_and(|g| g.show_map);
-        let map = active_game.map(|game| {
-            (
-                MapView {
-                    offset: game.map_visible_offset(),
-                    size: game.map_size,
-                },
-                self.collect_map_center_data(game),
-                self.collect_map_render_data(game),
-            )
-        });
-        let map_colors = self.game_data.as_ref().map(|d| MapColors {
-            background: d.colors.background_2d,
-            wall: d.colors.wall_2d,
-            barrel: d.colors.barrel_2d,
-        });
-        let crosshair_color = self.game_data.as_ref().map(|d| d.colors.crosshair_2d);
 
         let Some(window) = self.window.as_mut() else {
             return;
@@ -590,59 +472,8 @@ impl AppRunner {
 
         let screen = window.physical_size;
         let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
-        let decision = self.gate.decision();
-
-        // PARITY: `Render3D` order (`cOperationPurge.cpp:2848-3030`): building;
-        // centers + holes without depth writes; robots; health bars; then
-        // depth-sorted projectiles + particles.
-        if !in_2d {
-            crate::profile_scope!("Render3D");
-            if let (Some((camera, robot_data, center_data, _hud, _prompt, batches)), Some(programs)) =
-                (scene.as_ref(), self.programs.as_ref())
-            {
-                if let Some(building) = self.building.as_ref() {
-                    building.render(&mut window.gl, programs, camera, aspect, &self.gate);
-                }
-                window.gl.set_depth_write(false);
-                if let Some(center) = self.center.as_ref() {
-                    for data in center_data {
-                        center.render(&mut window.gl, programs, camera, aspect, decision, data);
-                    }
-                }
-                let bind = |gl: &glow::Context, t: glow::Texture| unsafe {
-                    use glow::HasContext;
-                    gl.bind_texture(glow::TEXTURE_2D, Some(t));
-                };
-                if let Some(sprites) = self.sprites.as_ref() {
-                    sprites.render(&mut window.gl, programs, camera, aspect, &batches.holes, bind);
-                }
-                window.gl.set_depth_write(true);
-                if let Some(robot) = self.robot.as_ref() {
-                    for data in robot_data {
-                        robot.render(&mut window.gl, programs, camera, aspect, decision, data);
-                    }
-                }
-                if let Some(sprites) = self.sprites.as_ref() {
-                    sprites.render(&mut window.gl, programs, camera, aspect, &batches.health, bind);
-                    sprites.render(&mut window.gl, programs, camera, aspect, &batches.effects, bind);
-                }
-            }
-        }
-        if let (Some(overlay), Some(programs), Some(colors), Some((view, centers, robots))) = (
-            self.overlay.as_ref(),
-            self.programs.as_ref(),
-            map_colors,
-            map.as_ref(),
-        ) {
-            if in_2d || show_minimap {
-                let mode = if in_2d { MapMode::Full2D } else { MapMode::Minimap };
-                overlay.render_map(&mut window.gl, programs, mode, *view, centers, robots, colors);
-            }
-            if !in_2d {
-                if let Some(c) = crosshair_color {
-                    overlay.render_crosshair(&mut window.gl, programs, c);
-                }
-            }
+        if let (Some(scene), Some(frame)) = (self.scene.as_mut(), frame.as_ref()) {
+            scene.render(&mut window.gl, frame, aspect);
         }
 
         // Text overlays (top-left, logical px).
@@ -659,7 +490,7 @@ impl AppRunner {
 
             if let Some(lines) = new_game_lines.as_ref() {
                 draw_block(lines, 4.0, 4.0, color);
-            } else if let Some((_, _, _, hud, prompt, _)) = scene.as_ref() {
+            } else if let Some((hud, prompt)) = hud.as_ref() {
                 let y = draw_block(hud, 4.0, 4.0, color);
                 // Profiler pane on the right third (design §5.3 split).
                 if let Some(pl) = profiler_lines.as_ref() {
@@ -728,181 +559,6 @@ impl AppRunner {
              (empty password enables cheats)",
             ng.pattern,
         )
-    }
-
-    /// Per-robot render data (team body color + barrel/tread colors) for the
-    /// live robots. The active robot's body would be tinted `Observer2DColor`
-    /// in the 2D map (M11); the 3D scene uses team colors.
-    fn collect_robot_render_data(&self, game: &Game) -> Vec<RobotRenderData> {
-        let data = &game.world.game_data;
-        let def = &data.game_definitions[game.world.game_def.get() as usize];
-        // PARITY: the active robot is not drawn — the eye sits inside it
-        // (`cOperationPurge.cpp:2919-2924`).
-        game.world
-            .robots
-            .iter()
-            .filter(|(id, r)| !r.is_dead() && game.active_robot != Some(**id))
-            .map(|(_, r)| {
-                let body_color = def
-                    .teams
-                    .get(r.team.get() as usize)
-                    .map(|t| t.color)
-                    .unwrap_or(Rgba::new(0.3, 0.5, 1.0, 1.0));
-                RobotRenderData {
-                    position: Vec3::new(r.position.x, r.position.y, 0.0),
-                    direction: r.direction,
-                    barrel_elevation: r.barrel_elevation,
-                    body_color,
-                    barrel_color: data.colors.barrel_3d,
-                    tread_color: data.colors.tread_3d,
-                }
-            })
-            .collect()
-    }
-
-    /// The three 3D sprite passes for this frame. Empty if the textures
-    /// are not loaded yet.
-    fn collect_sprite_batches(&self, game: &Game) -> SpriteBatches {
-        let mut out = SpriteBatches::default();
-        let Some(tex) = self.sprite_textures.as_ref() else {
-            return out;
-        };
-        let view = game.camera().view();
-        let data = &game.world.game_data;
-
-        // Holes: wall-oriented, unsorted (`cOperationPurge.cpp:2886-2905`).
-        out.holes.start(view, false, false);
-        for h in &game.world.holes.entries {
-            out.holes.add(&SpriteData {
-                center: h.position,
-                offset: Vec3::ZERO,
-                size: glam::Vec2::splat(h.size),
-                rotation: h.rotation,
-                axis: axis_from_normal(h.normal),
-                color: Rgba::new(1.0, 1.0, 1.0, 1.0),
-                texture: tex.hole,
-            });
-        }
-
-        // Health bars over every other live robot (`:2951-3000`).
-        out.health.start(view, true, false);
-        for (id, r) in game.world.robots.iter() {
-            if r.is_dead() || game.active_robot == Some(*id) {
-                continue;
-            }
-            let fraction = if r.health_start > 0.0 { r.health / r.health_start } else { 0.0 };
-            let z = crate::sim::robot::ROBOT_SIZE_Z + crate::render::overlay::HEALTH_BAR_HEIGHT * 0.5;
-            for seg in crate::render::overlay::health_bar_segments(fraction) {
-                out.health.add(&SpriteData {
-                    center: Vec3::new(r.position.x, r.position.y, z),
-                    offset: Vec3::new(seg.offset_x, 0.0, 0.0),
-                    size: glam::Vec2::new(seg.width, crate::render::overlay::HEALTH_BAR_HEIGHT),
-                    rotation: 0.0,
-                    axis: Axis::PositiveZ,
-                    color: seg.color,
-                    texture: tex.white,
-                });
-            }
-        }
-
-        // Projectiles (black, `cProjectile.cpp:196-214`) then particles.
-        out.effects.start(view, true, true);
-        for p in &game.world.projectiles {
-            let i = p.projectile_type.get() as usize;
-            if crate::data::assets::names::projectile_texture(i).is_none() {
-                continue;
-            }
-            let size = data.projectile_types[i].size;
-            out.effects.add(&SpriteData {
-                center: p.position,
-                offset: Vec3::ZERO,
-                size: glam::Vec2::splat(size),
-                rotation: 0.0,
-                axis: Axis::PositiveZ,
-                color: Rgba::new(0.0, 0.0, 0.0, 1.0),
-                texture: tex.projectile,
-            });
-        }
-        for p in game.world.particles.slots.iter().flatten() {
-            out.effects.add(&SpriteData {
-                center: p.position,
-                offset: Vec3::ZERO,
-                size: glam::Vec2::splat(p.size(data)),
-                rotation: p.rotation(),
-                axis: Axis::PositiveZ,
-                color: p.color(data),
-                texture: tex.smoke,
-            });
-        }
-        out
-    }
-
-    fn collect_center_render_data(&self, game: &Game) -> Vec<CenterRenderData> {
-        game.world
-            .centers
-            .iter()
-            .map(|c| CenterRenderData {
-                position_x: c.position.x,
-                position_y: c.position.y,
-                orientation: c.orientation_angle,
-                size: c.size,
-                color: c.color,
-            })
-            .collect()
-    }
-
-    /// Per-robot inputs for the 2D map (`Render2D`, `cOperationPurge.cpp:2781-2834`):
-    /// the active robot is tinted `observer_2d`, others use their team
-    /// color; an observer point is drawn as one more observer-tinted marker.
-    fn collect_map_render_data(&self, game: &Game) -> Vec<MapRobotData> {
-        use crate::game::ObserverType;
-        let data = &game.world.game_data;
-        let def = &data.game_definitions[game.world.game_def.get() as usize];
-        let observer = data.colors.observer_2d;
-        let point = game.observer_type == ObserverType::Point;
-        let mut out: Vec<MapRobotData> = game
-            .world
-            .robots
-            .iter()
-            .filter(|(_, r)| !r.is_dead())
-            .map(|(id, r)| {
-                let team_color = def
-                    .teams
-                    .get(r.team.get() as usize)
-                    .map(|t| t.color)
-                    .unwrap_or(Rgba::new(0.3, 0.5, 1.0, 1.0));
-                let marker_color = if !point && game.active_robot == Some(*id) {
-                    observer
-                } else {
-                    team_color
-                };
-                MapRobotData {
-                    position: r.position,
-                    direction: r.direction,
-                    marker_color,
-                }
-            })
-            .collect();
-        if point {
-            out.push(MapRobotData {
-                position: glam::Vec2::new(game.observer_point.x, game.observer_point.y),
-                direction: game.observer_theta,
-                marker_color: observer,
-            });
-        }
-        out
-    }
-
-    fn collect_map_center_data(&self, game: &Game) -> Vec<MapCenterData> {
-        game.world
-            .centers
-            .iter()
-            .map(|c| MapCenterData {
-                position: c.position,
-                size: c.size,
-                color: c.color,
-            })
-            .collect()
     }
 
     /// The frame pump (design §5.1). `execute_commands` runs regardless of
@@ -1162,49 +818,6 @@ impl AppRunner {
         let _ = writeln!(out, "--- hud ---\n{}", g.status_text());
         out
     }
-}
-
-/// GL handles for the sprite textures (white = untextured sprites).
-struct SpriteTextures {
-    projectile: glow::Texture,
-    hole: glow::Texture,
-    smoke: glow::Texture,
-    white: glow::Texture,
-}
-
-#[derive(Default)]
-struct SpriteBatches {
-    holes: SpriteBatch<glow::Texture>,
-    health: SpriteBatch<glow::Texture>,
-    effects: SpriteBatch<glow::Texture>,
-}
-
-/// A hole's outward wall normal as the sprite orientation axis.
-fn axis_from_normal(n: Vec3) -> Axis {
-    if n.x > 0.5 {
-        Axis::PositiveX
-    } else if n.x < -0.5 {
-        Axis::NegativeX
-    } else if n.y > 0.5 {
-        Axis::PositiveY
-    } else if n.y < -0.5 {
-        Axis::NegativeY
-    } else if n.z > 0.5 {
-        Axis::PositiveZ
-    } else {
-        Axis::NegativeZ
-    }
-}
-
-/// A 1x1 opaque-white texture used as a fallback when a building BMP is
-/// missing. Runtime-only.
-fn white_texture(gl: &std::rc::Rc<glow::Context>) -> Texture {
-    let image = DecodedImage {
-        width: 1,
-        height: 1,
-        rgba: vec![255, 255, 255, 255],
-    };
-    Texture::upload(gl, &image).expect("1x1 white texture upload")
 }
 
 impl ApplicationHandler for AppRunner {

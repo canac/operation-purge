@@ -24,9 +24,8 @@ use crate::input::commands::{binding, fire_binding, Command, FIRE_COMMANDS};
 use crate::input::Input;
 use crate::math::intersect::MovingRect;
 use crate::path::RoomGraph;
-use crate::render::camera::FreeFlyCamera;
+use crate::math::camera::Camera;
 use crate::math::d3dx::D3DX_PI;
-use crate::render::overlay::{MAP_VIEWPORT_OFFSET, MAP_VIEWPORT_SIZE};
 use crate::sim::robot::{Throttle, ROBOT_SIZE_XY, ROBOT_SIZE_Z};
 use crate::sim::world::{RobotInput, Status, World};
 
@@ -46,6 +45,11 @@ pub const ENEMY_VISIBLE_POLL_SECONDS: f32 = 0.25;
 /// PARITY: `MIN_VISIBLE_SIZE` — the smallest 2D-map window, in rooms
 /// (`cOperationPurge.cpp:15`).
 pub const MIN_VISIBLE_SIZE: f32 = 1.0;
+
+/// Full-screen 2D map viewport as window fractions (`m_fBuilding2DOffset` /
+/// `m_fBuilding2DSize`, `cOperationPurge.cpp:74-75`).
+pub const MAP_VIEWPORT_OFFSET: f32 = 0.025;
+pub const MAP_VIEWPORT_SIZE: f32 = 0.95;
 
 /// PARITY: `cOperationPurge::eObserverType` — which vantage the 3D camera +
 /// HUD use. `Robot` = the player controls a friendly robot; `AiRobot` = the
@@ -1012,12 +1016,12 @@ impl Game {
     // ============================= camera =============================
 
     /// PARITY: `cOperationPurge::SetupScene` view pose (`cOperationPurge.cpp:3034-3056`)
-    /// expressed as a [`FreeFlyCamera`] (which builds the same `LookAtLH` +
-    /// `PerspectiveFovLH · CLIP_FIX`, design §3.2). Observer-point uses
+    /// expressed as a [`Camera`] (which builds the same `LookAtLH` +
+    /// `PerspectiveFovLH · CLIP_FIX`). Observer-point uses
     /// `SphereCoord(theta, phi, 1)` (== the camera's yaw/pitch forward);
     /// observer-robot sits at the robot's viewpoint offset looking down its
     /// barrel. `z_far = min(fMaxVisibleDist, |building|)` (`:3044-3046`).
-    pub fn camera(&self) -> FreeFlyCamera {
+    pub fn camera(&self) -> Camera {
         let b = &self.world.building;
         let building_size = Vec3::new(
             b.maze.cx as f32 * b.room_size,
@@ -1027,7 +1031,7 @@ impl Game {
         let diagonal = building_size.length();
 
         if self.observer_type == ObserverType::Point {
-            let mut cam = FreeFlyCamera::new(self.observer_point, diagonal);
+            let mut cam = Camera::new(self.observer_point, diagonal);
             cam.yaw = self.observer_theta;
             cam.pitch = self.observer_phi;
             return cam;
@@ -1039,7 +1043,7 @@ impl Game {
                 let eye = Vec3::new(r.position.x, r.position.y, OBJECTS.tread_radius * 2.0);
                 let mvd =
                     self.world.game_data.robot_types[r.robot_type.get() as usize].max_visible_dist;
-                let mut cam = FreeFlyCamera::new(eye, mvd.min(diagonal));
+                let mut cam = Camera::new(eye, mvd.min(diagonal));
                 cam.yaw = r.direction;
                 cam.pitch = r.barrel_elevation;
                 return cam;
@@ -1047,7 +1051,7 @@ impl Game {
         }
 
         // Fallback overview (nothing selected / in 2D): center of the building.
-        FreeFlyCamera::new(building_size * 0.5, diagonal)
+        Camera::new(building_size * 0.5, diagonal)
     }
 }
 

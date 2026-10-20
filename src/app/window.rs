@@ -11,7 +11,6 @@
 //! everything), requests 24-bit depth, no MSAA. Context is OpenGL 3.3 core
 //! (macOS negotiates 4.1 core — fine, GLSL stays `#version 330`).
 
-use std::ffi::CString;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
@@ -209,10 +208,4 @@ impl RenderWindow {
     pub fn swap_buffers(&self) {
         let _ = self.surface.swap_buffers(&self.context);
     }
-}
-
-/// Load a GL proc address by name (rarely needed outside context creation;
-/// kept for completeness / debug tooling).
-pub fn proc_address_name(name: &str) -> CString {
-    CString::new(name).expect("proc name has no interior NUL")
 }

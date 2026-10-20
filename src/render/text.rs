@@ -1,19 +1,14 @@
-//! HUD text via an `ab_glyph` atlas, replacing `ID3DXFont`/`ID3DXSprite`
-//! (design §3.6, §1.4.12).
+//! HUD text via an `ab_glyph` atlas, replacing `ID3DXFont`/`ID3DXSprite`.
 //!
 //! Liberation Sans Bold (SIL OFL, Arial-metric-compatible) at 15 logical px
 //! × `hud_scale`, baked into a single-channel (R8 coverage) shelf-packed
 //! atlas. The bake — glyph metrics, coverage rasterization, and shelf
 //! packing — is pure CPU and unit-tested without a GL context; the atlas
 //! upload and the small text-draw shader are compiled but exercised only at
-//! runtime. Wayland `ScaleFactorChanged` re-bakes at the new scale
-//! (design §3.1).
+//! runtime. Wayland `ScaleFactorChanged` re-bakes at the new scale.
 //!
-//! This is the M3 "text shell": a self-contained textured-quad program just
-//! for the glyph atlas (pixel-space ortho, R8 coverage → alpha, uniform
-//! color). It is intentionally NOT one of the four game shader programs
-//! (§3.4) — those land at M4. HUD text will migrate onto `prog_sprite`
-//! there; the metrics/atlas baked here are reused unchanged.
+//! The text program samples the R8 coverage as alpha under a uniform color,
+//! which `prog_sprite`'s RGBA modulate cannot express, so it stays separate.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -22,9 +17,9 @@ use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use glow::HasContext;
 
 use crate::error::GlError;
+use crate::render::shaders::Program;
 
-/// HUD font size in logical pixels before the DPI/`hud_scale` multiplier
-/// (design §3.6, §1.4.12).
+/// HUD font size in logical pixels before the DPI/`hud_scale` multiplier.
 pub const HUD_FONT_LOGICAL_PX: f32 = 15.0;
 
 /// Printable ASCII range baked into the atlas (space..=tilde).
@@ -36,7 +31,7 @@ const LAST_CHAR: char = '~';
 const PADDING: u32 = 1;
 
 /// Bundled font (SIL OFL). Embedded so there is no runtime file dependency
-/// for text (asset item 6, design §4.6).
+/// for text.
 const FONT_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/assets/Fonts/LiberationSans-Bold.ttf"
@@ -54,8 +49,6 @@ pub struct GlyphInfo {
     pub bearing: (f32, f32),
     /// Coverage bitmap size in pixels.
     pub size: (u32, u32),
-    /// Top-left texel of the glyph inside the atlas.
-    pub atlas_pos: (u32, u32),
     /// UV rect (normalized), `uv_min` = top-left, `uv_max` = bottom-right.
     pub uv_min: (f32, f32),
     pub uv_max: (f32, f32),
@@ -120,23 +113,17 @@ impl BakedAtlas {
                 None => (0, 0, (0.0, 0.0), Vec::new()),
             };
 
-            let (ax, ay);
-            if w == 0 || h == 0 {
-                // No bitmap (space etc.) — advance-only glyph.
-                ax = 0;
-                ay = 0;
-            } else {
+            // A glyph with no bitmap (space etc.) is advance-only.
+            if w > 0 && h > 0 {
                 if pen_x + w + PADDING > atlas_width {
                     // Wrap to the next shelf.
                     pen_x = PADDING;
                     pen_y += shelf_height + PADDING;
                     shelf_height = 0;
                 }
-                ax = pen_x;
-                ay = pen_y;
+                coverages.push((ch, pen_x, pen_y, w, h, pixels));
                 pen_x += w + PADDING;
                 shelf_height = shelf_height.max(h);
-                coverages.push((ch, ax, ay, w, h, pixels));
             }
 
             glyphs.insert(
@@ -145,7 +132,6 @@ impl BakedAtlas {
                     advance,
                     bearing,
                     size: (w, h),
-                    atlas_pos: (ax, ay),
                     // UVs filled after we know the final atlas height.
                     uv_min: (0.0, 0.0),
                     uv_max: (0.0, 0.0),
@@ -185,19 +171,10 @@ impl BakedAtlas {
             glyphs,
         })
     }
-
-    /// Total advance width of `text` in device pixels (single line, no
-    /// kerning — the original used none).
-    pub fn measure(&self, text: &str) -> f32 {
-        text.chars()
-            .map(|c| self.glyphs.get(&c).map(|g| g.advance).unwrap_or(0.0))
-            .sum()
-    }
 }
 
-/// Runtime glyph atlas: a baked atlas uploaded as an R8 GL texture, plus the
-/// small pixel-space text-draw program. Constructed at runtime once a GL
-/// context exists.
+/// Runtime glyph atlas: a baked atlas uploaded as an R8 GL texture (deleted
+/// on drop). Constructed at runtime once a GL context exists.
 pub struct GlyphAtlas {
     gl: Rc<glow::Context>,
     pub baked: BakedAtlas,
@@ -275,8 +252,14 @@ impl GlyphAtlas {
     }
 }
 
-/// GLSL 330 for the M3 text-shell program: pixel-space ortho, R8 coverage
-/// sampled as alpha, uniform color. (The four game shader programs are M4.)
+impl Drop for GlyphAtlas {
+    fn drop(&mut self) {
+        unsafe { self.gl.delete_texture(self.texture) };
+    }
+}
+
+/// GLSL 330 for the text program: pixel-space ortho, R8 coverage sampled as
+/// alpha, uniform color.
 const TEXT_VS: &str = r#"#version 330 core
 layout(location = 0) in vec2 a_pos;
 layout(location = 1) in vec2 a_uv;
@@ -302,23 +285,20 @@ void main() {
 }
 "#;
 
-/// Minimal runtime text drawer: compiles the text-shell program and streams
-/// glyph quads through a dynamic VBO. Runtime-only. Draws single lines at a
+/// Minimal runtime text drawer: owns the text program and streams glyph
+/// quads through a dynamic VBO. Runtime-only. Draws single lines at a
 /// pixel origin; y is the text *baseline* offset by ascent inside [`draw`].
 pub struct TextRenderer {
     gl: Rc<glow::Context>,
-    program: glow::Program,
+    program: Program,
     vao: glow::VertexArray,
     vbo: glow::Buffer,
-    u_screen: glow::UniformLocation,
-    u_color: glow::UniformLocation,
-    u_tex: glow::UniformLocation,
 }
 
 impl TextRenderer {
     pub fn new(gl: Rc<glow::Context>) -> Result<Self, GlError> {
+        let program = Program::link(&gl, TEXT_VS, TEXT_FS)?;
         unsafe {
-            let program = link_program(&gl, TEXT_VS, TEXT_FS)?;
             let vao = gl
                 .create_vertex_array()
                 .map_err(|e| GlError::Context(format!("text vao: {e}")))?;
@@ -334,24 +314,11 @@ impl TextRenderer {
             gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride, 2 * 4);
             gl.bind_vertex_array(None);
 
-            let u_screen = gl
-                .get_uniform_location(program, "u_screen")
-                .ok_or_else(|| GlError::Context("missing u_screen".into()))?;
-            let u_color = gl
-                .get_uniform_location(program, "u_color")
-                .ok_or_else(|| GlError::Context("missing u_color".into()))?;
-            let u_tex = gl
-                .get_uniform_location(program, "u_tex")
-                .ok_or_else(|| GlError::Context("missing u_tex".into()))?;
-
             Ok(Self {
                 gl,
                 program,
                 vao,
                 vbo,
-                u_screen,
-                u_color,
-                u_tex,
             })
         }
     }
@@ -392,17 +359,16 @@ impl TextRenderer {
         if verts.is_empty() {
             return;
         }
+        let prog = &self.program;
+        prog.bind();
+        prog.set_vec2(&prog.u.screen, screen.0 as f32, screen.1 as f32);
+        prog.set_color(&prog.u.color, crate::math::Rgba::new(color[0], color[1], color[2], color[3]));
         unsafe {
             let gl = &self.gl;
-            gl.use_program(Some(self.program));
-            gl.uniform_2_f32(Some(&self.u_screen), screen.0 as f32, screen.1 as f32);
-            gl.uniform_4_f32(Some(&self.u_color), color[0], color[1], color[2], color[3]);
-            gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(atlas.texture()));
-            gl.uniform_1_i32(Some(&self.u_tex), 0);
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
-            // Buffer orphaning (design §3.5): discard then refill.
+            // Buffer orphaning: discard then refill.
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 bytemuck::cast_slice(&verts),
@@ -414,41 +380,13 @@ impl TextRenderer {
     }
 }
 
-unsafe fn link_program(
-    gl: &glow::Context,
-    vs_src: &str,
-    fs_src: &str,
-) -> Result<glow::Program, GlError> {
-    let compile = |stage: u32, src: &str, name: &'static str| -> Result<glow::Shader, GlError> {
-        let shader = gl
-            .create_shader(stage)
-            .map_err(|e| GlError::ShaderCompile { stage: name, log: e })?;
-        gl.shader_source(shader, src);
-        gl.compile_shader(shader);
-        if !gl.get_shader_compile_status(shader) {
-            return Err(GlError::ShaderCompile {
-                stage: name,
-                log: gl.get_shader_info_log(shader),
-            });
+impl Drop for TextRenderer {
+    fn drop(&mut self) {
+        unsafe {
+            self.gl.delete_vertex_array(self.vao);
+            self.gl.delete_buffer(self.vbo);
         }
-        Ok(shader)
-    };
-    let vs = compile(glow::VERTEX_SHADER, vs_src, "vertex")?;
-    let fs = compile(glow::FRAGMENT_SHADER, fs_src, "fragment")?;
-    let program = gl
-        .create_program()
-        .map_err(GlError::ProgramLink)?;
-    gl.attach_shader(program, vs);
-    gl.attach_shader(program, fs);
-    gl.link_program(program);
-    if !gl.get_program_link_status(program) {
-        return Err(GlError::ProgramLink(gl.get_program_info_log(program)));
     }
-    gl.detach_shader(program, vs);
-    gl.detach_shader(program, fs);
-    gl.delete_shader(vs);
-    gl.delete_shader(fs);
-    Ok(program)
 }
 
 #[cfg(test)]
@@ -477,7 +415,8 @@ mod tests {
             if w == 0 || h == 0 {
                 continue;
             }
-            let (x, y) = g.atlas_pos;
+            let x = (g.uv_min.0 * atlas.width as f32).round() as u32;
+            let y = (g.uv_min.1 * atlas.height as f32).round() as u32;
             assert!(x + w <= atlas.width, "glyph overflows atlas width");
             assert!(y + h <= atlas.height, "glyph overflows atlas height");
             // UVs are normalized and ordered.
@@ -510,12 +449,10 @@ mod tests {
     }
 
     #[test]
-    fn measure_sums_advances_and_space_has_width_but_no_bitmap() {
+    fn space_has_width_but_no_bitmap() {
         let atlas = BakedAtlas::bake(1.0).unwrap();
         let space = atlas.glyphs[&' '];
         assert_eq!(space.size, (0, 0));
         assert!(space.advance > 0.0);
-        let w = atlas.measure("AB");
-        assert!((w - (atlas.glyphs[&'A'].advance + atlas.glyphs[&'B'].advance)).abs() < 1e-3);
     }
 }
