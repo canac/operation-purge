@@ -18,7 +18,7 @@ harvested straight from those comments.
 
 **186** ledger entries found across `src tests`.
 
-## Parity quirks (`PARITY`) — 183
+## Parity quirks (`PARITY`) — 181
 
 | Rust `file:line` | C++ citation | Note |
 |---|---|---|
@@ -93,14 +93,12 @@ harvested straight from those comments.
 | `src/maze/building.rs:658` | `—` | `cBuilding::GetIntersectedWallsPortion` |
 | `src/maze/mod.rs:65` | `cMaze.cpp:179-204` | `cMaze::OpenMaze` (`cMaze.cpp:179-204`) reads the 8-byte |
 | `src/maze/search.rs:27` | `—` | the `strchr` anchor jump is a raw byte search — it is **not** |
-| `src/path/astar.rs:214` | `cPathFinder.cpp:294` | `cPathFinder.cpp:294` — only skip if the node is |
-| `src/path/astar.rs:250` | `cPathFinder.cpp:225-237` | `cPathFinder.cpp:225-237` — walk parents back to the |
-| `src/path/astar.rs:341` | `—` | g/h are squared distance, not Euclidean distance — |
-| `src/path/mod.rs:108` | `cPathFinder.cpp:373-401` | `cPathFinder::IsPointVisible` (`cPathFinder.cpp:373-401`). |
-| `src/path/mod.rs:132` | `cPathFinder.cpp:454-480` | `cHighLevelPathFinder::GetNeighbors` (`cPathFinder.cpp:454-480`). |
-| `src/path/mod.rs:157` | `cPathFinder.cpp:521-595` | `cLowLevelPathFinder::GetNeighbors` (`cPathFinder.cpp:521-595`). |
-| `src/path/mod.rs:230` | `cPathFinder.cpp:428-451` | `cHighLevelPathFinder::FindPath` (`cPathFinder.cpp:428-451`). |
-| `src/path/mod.rs:245` | `cPathFinder.cpp:501-518` | `cLowLevelPathFinder::FindPath` (`cPathFinder.cpp:501-518`). |
+| `src/path/astar.rs:204` | `cPathFinder.cpp:294` | `cPathFinder.cpp:294` — only skip if the node is |
+| `src/path/astar.rs:240` | `cPathFinder.cpp:225-237` | `cPathFinder.cpp:225-237` — walk parents back to the |
+| `src/path/mod.rs:110` | `cPathFinder.cpp:373-401` | `cPathFinder::IsPointVisible` (`cPathFinder.cpp:373-401`). |
+| `src/path/mod.rs:134` | `cPathFinder.cpp:454-480` | `cHighLevelPathFinder::GetNeighbors` (`cPathFinder.cpp:454-480`). |
+| `src/path/mod.rs:159` | `cPathFinder.cpp:521-595` | `cLowLevelPathFinder::GetNeighbors` (`cPathFinder.cpp:521-595`). |
+| `src/path/mod.rs:253` | `cPathFinder.cpp:501-518` | `cLowLevelPathFinder::FindPath` (`cPathFinder.cpp:501-518`). |
 | `src/path/nodes.rs:28` | `cPathFinder.cpp:14` | `cPathFinder.cpp:14` `s_nNodesPerPoint = 256` — the hash |
 | `src/path/nodes.rs:66` | `cNodeList.cpp:19-23` | `cNodeList::Reset` (`cNodeList.cpp:19-23`) — clears the |
 | `src/profiler.rs:101` | `—` | `cProfileNode::GetSubNode` linear-scans siblings by name. |
@@ -214,8 +212,10 @@ harvested straight from those comments.
 | `src/error.rs:46` | `—` | the C++ performs zero header validation — a signed `cx`/`cy` pair |
 | `src/error.rs:85` | `—` | building meshes keep 16-bit indices (design §1.3); a mesh |
 
-## Corrected divergences (`FIX`) — 0
+## Corrected divergences (`FIX`) — 2
 
 | Rust `file:line` | C++ citation | Note |
 |---|---|---|
+| `src/path/astar.rs:17` | `—` | the C++ used `g = squared distance` and `h = 3.0 * squared distance` |
+| `src/path/mod.rs:238` | `cPathFinder.cpp:439-442` | the C++ computed the centered start/goal (`cPathFinder.cpp:439-442`) |
 

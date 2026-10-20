@@ -1,12 +1,6 @@
-//! Weighted A* core: binary-heap open list (`cPriorityQueue`) + the search
-//! loop (`cPathFinder::FindPath`), source-map §3.7.
-//!
-//! PARITY: inadmissible-by-design heuristic — `h = 3.0 * squared
-//! distance` (`s_fEstimateWeight`, `cPathFinder.cpp:14,325-328`), `g =
-//! squared distance` (`cPathFinder.cpp:320-323`, `GetNodeDistance` uses
-//! `Distance2DSqr`, not `Distance2D`). Do not "fix" this into an
-//! admissible heuristic; the original's greedy behavior is load-bearing
-//! for AI feel.
+//! A* core: binary-heap open list (`cPriorityQueue`) + the search loop
+//! (`cPathFinder::FindPath`), source-map §3.7. Costs are Euclidean with an
+//! admissible heuristic, so paths are shortest.
 //!
 //! This module ports the room-graph-agnostic core only: [`AStar::search`]
 //! takes caller-supplied `neighbors`/`is_goal` closures (`cPathFinder`'s
@@ -18,23 +12,19 @@ use super::nodes::NodeArena;
 use crate::math::equals;
 use glam::Vec2;
 
-/// A* heuristic weight — PARITY, `cPathFinder.cpp:14`.
-pub const ESTIMATE_WEIGHT: f32 = 3.0;
-
-fn squared_distance(a: Vec2, b: Vec2) -> f32 {
-    (a - b).length_squared()
-}
-
-/// `cPathFinder::GetNodeDistance` (`cPathFinder.cpp:320-323`): `g` cost —
-/// PARITY, squared (not linear) distance.
+/// `cPathFinder::GetNodeDistance` (`cPathFinder.cpp:320-323`): `g` cost.
+///
+/// FIX: the C++ used `g = squared distance` and `h = 3.0 * squared distance`
+/// (`cPathFinder.cpp:14,320-328`), a greedy search that took needlessly long
+/// routes.
 fn node_distance(a: Vec2, b: Vec2) -> f32 {
-    squared_distance(a, b)
+    a.distance(b)
 }
 
 /// `cPathFinder::GetNodeHeuristic` (`cPathFinder.cpp:325-328`): `h`
-/// estimate — PARITY, `3.0 * squared distance`, deliberately inadmissible.
+/// estimate, never more than the true remaining cost.
 fn node_heuristic(a: Vec2, b: Vec2) -> f32 {
-    node_distance(a, b) * ESTIMATE_WEIGHT
+    node_distance(a, b)
 }
 
 fn total_cost(arena: &NodeArena, idx: usize) -> f32 {
@@ -331,24 +321,6 @@ mod tests {
         assert!(path.is_none());
     }
 
-    #[test]
-    fn estimate_weight_is_pinned() {
-        assert_eq!(ESTIMATE_WEIGHT, 3.0);
-    }
-
-    #[test]
-    fn heuristic_and_cost_use_squared_distance() {
-        // PARITY: g/h are squared distance, not Euclidean distance —
-        // directly exercise the private helpers via a search where a
-        // "longer straight line" is preferred over a "shorter zig-zag"
-        // under squared-distance costing, distinguishing this from a
-        // standard admissible-Euclidean A*.
-        assert_eq!(node_distance(Vec2::new(0.0, 0.0), Vec2::new(3.0, 4.0)), 25.0);
-        assert_eq!(
-            node_heuristic(Vec2::new(0.0, 0.0), Vec2::new(3.0, 4.0)),
-            25.0 * ESTIMATE_WEIGHT
-        );
-    }
 
     #[test]
     fn repeated_searches_reuse_the_arena_via_reset() {

@@ -39,7 +39,7 @@ pub struct Node {
     pub parent: Option<usize>,
     /// `fCostFromStart` (g).
     pub cost_from_start: f32,
-    /// `fCostToGoal` (h, the — inadmissible by design — heuristic estimate).
+    /// `fCostToGoal` (h, the heuristic estimate).
     pub cost_to_goal: f32,
     pub on_open: bool,
     pub on_closed: bool,

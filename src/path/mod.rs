@@ -9,13 +9,9 @@
 //! `cAIRobot::PreventCollision`, itself commented out).
 //!
 //! PARITY:
-//! - Inadmissible weighted A* (`h = 3.0*sqr-dist`, `g = sqr-dist`) lives in
-//!   [`astar`] (`cPathFinder.cpp:404-413`) — verified, unchanged.
-//! - `cHighLevelPathFinder::FindPath` computes centered start/goal points
-//!   (`cPathFinder.cpp:439-442`) but then searches with the ORIGINAL
-//!   uncentered points and never appends the goal (`//rPath.push_back` is
-//!   commented, `cPathFinder.cpp:449`); the low level DOES append the goal
-//!   (`cPathFinder.cpp:516`).
+//! - `cHighLevelPathFinder::FindPath` never appends the goal
+//!   (`//rPath.push_back` is commented, `cPathFinder.cpp:449`); the low level
+//!   DOES append the goal (`cPathFinder.cpp:516`).
 //! - Low-level lookahead cap `min(2, len-1)` rooms is applied by the caller
 //!   (`cAIRobot::FindLowLevelPath`, `cAIRobot.cpp:765`); see
 //!   [`PathFinder::LOOKAHEAD_CAP`].
@@ -69,6 +65,12 @@ impl<'a> RoomGraph<'a> {
     pub fn is_same_room(&self, a: Vec2, b: Vec2) -> bool {
         let rs = self.building.room_size;
         (a.x / rs) as i32 == (b.x / rs) as i32 && (a.y / rs) as i32 == (b.y / rs) as i32
+    }
+
+    /// The center of the room containing `p`.
+    pub fn room_center(&self, p: Vec2) -> Vec2 {
+        let rs = self.building.room_size;
+        Vec2::new(p.x - rem(p.x, rs) + rs * 0.5, p.y - rem(p.y, rs) + rs * 0.5)
     }
 
     /// `cBuilding::GetSurroundingWalls`→`cMaze::GetSurroundingWalls`
@@ -227,12 +229,18 @@ fn rem(a: f32, b: f32) -> f32 {
     a % b
 }
 
-/// PARITY: `cHighLevelPathFinder::FindPath` (`cPathFinder.cpp:428-451`).
-/// A* over the room graph from `start`, goal = any point in `goal`'s room.
-/// Returns the node sequence (start..goal-room inclusive); the goal point is
-/// deliberately NOT appended (`//rPath.push_back` commented). `None` if no
+/// `cHighLevelPathFinder::FindPath` (`cPathFinder.cpp:428-451`).
+/// A* over the room graph from `start`'s room center, goal = any point in
+/// `goal`'s room. Returns room centers (start room..goal room inclusive); the
+/// goal point is NOT appended (`//rPath.push_back` commented). `None` if no
 /// path exists.
+///
+/// FIX: the C++ computed the centered start/goal (`cPathFinder.cpp:439-442`)
+/// but searched the raw points, so waypoints kept the robot's in-room offset
+/// and a wall-hugging robot got low-level goals inside walls two rooms ahead.
 pub fn find_high_level_path(graph: &RoomGraph, start: Vec2, goal: Vec2) -> Option<Vec<Vec2>> {
+    let start = graph.room_center(start);
+    let goal = graph.room_center(goal);
     let mut astar = AStar::new();
     astar.search(
         start,
@@ -311,11 +319,6 @@ mod tests {
             .collect()
     }
 
-    /// Hand trace on a 4x4 open field, room size 10. Start room (0,0), goal
-    /// room (3,0). Neighbors are enumerated in eDirection order
-    /// Up,Left,Down,Right; the inadmissible `h=3*sqr` heuristic makes the
-    /// greedy search drive straight along +X (Right) with no detours, so the
-    /// room sequence is (0,0)->(1,0)->(2,0)->(3,0).
     #[test]
     fn high_level_room_sequence_matches_hand_trace_4x4() {
         let maze = open_bordered(4, 4);
@@ -327,27 +330,83 @@ mod tests {
         assert_eq!(rooms(&graph, &path), vec![(0, 0), (1, 0), (2, 0), (3, 0)]);
     }
 
-    /// High-level nodes are `start + k*roomSize` in each axis (offsets are
-    /// integer multiples of the room size), i.e. the search preserves the
-    /// start's in-room fractional position (`cHighLevelPathFinder` searches
-    /// the uncentered start).
     #[test]
-    fn high_level_preserves_in_room_offset() {
+    fn high_level_path_runs_through_room_centers() {
         let maze = open_bordered(4, 4);
         let building = test_building(maze);
         let graph = RoomGraph::new(&building);
-        // Start off-center within room (0,0).
         let start = Vec2::new(2.0, 3.0);
-        let goal = room_center(2, 2, 10.0);
+        let goal = Vec2::new(27.0, 21.0);
         let path = find_high_level_path(&graph, start, goal).expect("path");
-        assert_eq!(path[0], start);
+        assert_eq!(path[0], room_center(0, 0, 10.0));
         for p in &path {
-            // Same fractional offset as the start, everywhere.
-            assert!((p.x - 2.0).rem_euclid(10.0).abs() < 1e-4 || ((p.x - 2.0) % 10.0).abs() < 1e-4);
+            assert_eq!(*p, room_center((p.x / 10.0) as i32, (p.y / 10.0) as i32, 10.0));
         }
-        // Reaches the goal room.
-        let last = *path.last().unwrap();
-        assert!(graph.is_same_room(last, goal));
+        assert!(graph.is_same_room(*path.last().unwrap(), goal));
+    }
+
+    fn bfs_room_steps(maze: &Maze, from: (i32, i32), to: (i32, i32)) -> Option<usize> {
+        let (cx, cy) = (maze.cx, maze.cy);
+        let h = |x: i32, y: i32| maze.h_walls[(y * cx + x) as usize];
+        let v = |x: i32, y: i32| maze.v_walls[(y * (cx + 1) + x) as usize];
+        let mut dist = vec![usize::MAX; (cx * cy) as usize];
+        let mut queue = std::collections::VecDeque::from([from]);
+        dist[(from.1 * cx + from.0) as usize] = 0;
+        while let Some((x, y)) = queue.pop_front() {
+            let d = dist[(y * cx + x) as usize];
+            if (x, y) == to {
+                return Some(d);
+            }
+            let moves = [
+                (x, y - 1, !h(x, y)),
+                (x, y + 1, !h(x, y + 1)),
+                (x - 1, y, !v(x, y)),
+                (x + 1, y, !v(x + 1, y)),
+            ];
+            for (nx, ny, open) in moves {
+                if open && (0..cx).contains(&nx) && (0..cy).contains(&ny) && dist[(ny * cx + nx) as usize] == usize::MAX {
+                    dist[(ny * cx + nx) as usize] = d + 1;
+                    queue.push_back((nx, ny));
+                }
+            }
+        }
+        None
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn high_level_path_takes_fewest_rooms(
+            walls in proptest::collection::vec(proptest::bool::weighted(0.35), 2 * 8 * 9),
+            from in (0..8i32, 0..8i32),
+            to in (0..8i32, 0..8i32),
+        ) {
+            let mut maze = open_bordered(8, 8);
+            for (i, &w) in walls.iter().enumerate() {
+                let (h, idx) = if i < 72 { (true, i) } else { (false, i - 72) };
+                let walls = if h { &mut maze.h_walls } else { &mut maze.v_walls };
+                walls[idx] |= w;
+            }
+            let expected = bfs_room_steps(&maze, from, to);
+            let building = test_building(maze);
+            let graph = RoomGraph::new(&building);
+            let path = find_high_level_path(&graph, room_center(from.0, from.1, 10.0), room_center(to.0, to.1, 10.0));
+            proptest::prop_assert_eq!(path.map(|p| p.len() - 1), expected);
+        }
+    }
+
+    #[test]
+    fn wall_hugging_start_reaches_lookahead_room() {
+        let mut maze = open_bordered(3, 2);
+        // h(2,1), under room (2,0) only: a start hugging room (0,0)'s open
+        // bottom edge would sit inside it if carried over uncentered.
+        maze.h_walls[5] = true;
+        let building = test_building(maze);
+        let graph = RoomGraph::new(&building);
+        let size = Vec2::new(1.6, 1.6);
+        let start = Vec2::new(5.0, 9.0);
+        let high = find_high_level_path(&graph, start, room_center(2, 0, 10.0)).expect("high");
+        let goal = high[PathFinder::LOOKAHEAD_CAP.min(high.len() - 1)];
+        assert!(find_low_level_path(&graph, start, goal, 3.0, size).is_some());
     }
 
     /// A wall between room (0,0) and (1,0) forces the high-level path to
