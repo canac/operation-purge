@@ -74,7 +74,7 @@ New to the game? See [`PLAYING.md`](PLAYING.md) for a short player guide.
 Key bindings are **compiled in** (`COMMAND_BINDINGS` / `FIRE_COMMANDS` in
 `src/input/commands.rs`), transcribed from the original `GameData.xml`. They
 are positional against the fixed command ABI — the same enum order the 2011
-build bound against (design §5, help-doc §1):
+build bound against:
 
 | Context | Action | Default key |
 |---|---|---|
@@ -136,6 +136,12 @@ file:
 | `mouse_scale` | float | `1.0` | Multiplies raw mouse deltas (platform-dependent units). |
 | `hud_scale` | float? | none | HUD scale; none = monitor DPI factor. |
 | `seed` | int? | none | RNG seed; none = time-seeded. |
+
+### Error log
+
+Errors are printed to stderr and appended to `Logfile.txt` in the same
+directory as `config.toml` (the Windows release build has no console). An
+error-free run creates no log file.
 
 ### Registry / GameData migration
 
@@ -215,7 +221,7 @@ produces the binary. Distributable bundles are an optional extra step:
 - **Windows (single `.exe`, cross-built from macOS):** the `assets/` tree is
   compiled into the binary. On first run, if no `assets/` sits beside the exe
   or in the working dir, it is unpacked to `%APPDATA%\operation-purge\assets`
-  (refreshed when the version changes; user-added mazes are kept).
+  (refreshed whenever the shipped assets change; user-added mazes are kept).
   ```sh
   brew install mingw-w64
   rustup target add x86_64-pc-windows-gnu
@@ -234,16 +240,15 @@ play/feel are only exercisable on a real desktop. The following still need a
 human at a display (all three OSes) — see [`RUN.md`](RUN.md) for the detailed
 per-item procedure:
 
-- **M4 winding / culling checklist** — floor visible only from above; ceiling
+- **Winding / culling checklist** — floor visible only from above; ceiling
   visible-and-dark only from below; inner wall faces; reversed outer-boundary
   polygon. Culling ships **disabled** (`CullNone`) until each item is signed
   off and a concrete `WindingDecision` is baked in.
-- **M5 lighting look** vs help-doc screenshots — dome dimming from raw
+- **Lighting look** vs help-doc screenshots — dome dimming from raw
   (un-normalized) normals, dark up-normal ceiling, ambient `0x202020`, UV
   repeat tiling on walls/floor, map colors after the COLORREF→RGBA
   conversion, viewport offsets (0.025/0.95 full-2D, 0.05/0.9 minimap), and the
-  depth-fixup (`z' = 2z − w` + `GL_LEQUAL`) occlusion check. Retune
-  `LIGHT_DATA` here if the scene reads too dark/bright.
+  depth-fixup (`z' = 2z − w` + `GL_LEQUAL`) occlusion check.
 - **Text crispness** — HUD/UI glyph atlas at each DPI scale factor.
 - **Particle trails** — gap-free rocket trails and projectile black
   silhouettes at 25% and 400% game speed.

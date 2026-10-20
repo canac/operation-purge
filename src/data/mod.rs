@@ -47,7 +47,7 @@ pub struct ColorsOptions {
 /// room size 10.0, ceiling height 5.0).
 ///
 /// The wall/floor/ceiling texture *filenames* are not stored here — they are
-/// compiled in ([`assets::names`], user decision). Only the per-surface UV
+/// compiled in ([`assets::names`]). Only the per-surface UV
 /// texture *sizes* remain data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -70,7 +70,7 @@ pub struct SoundsOptions {
 
 /// `[ui]` — `tUIOptions`: the 10 movement/rate floats. The 36-entry key
 /// binding table is compiled in (`input::commands::COMMAND_BINDINGS`), not
-/// data (user decision).
+/// data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UiOptions {

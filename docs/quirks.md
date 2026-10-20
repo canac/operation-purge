@@ -7,7 +7,7 @@
 Every intentional divergence from — or bug-for-bug reproduction of —
 the 2011 C++/Direct3D9 original is pinned in the source with one of
 three tags, each citing the C++ ground truth by `file:line`
-(`~/Downloads/programs/OperationPurge`). This table is that ledger,
+(`reference/OperationPurge`). This table is that ledger,
 harvested straight from those comments.
 
 | Tag | Meaning |
@@ -18,74 +18,74 @@ harvested straight from those comments.
 
 **186** ledger entries found across `src tests`.
 
-## Parity quirks (`PARITY`) — 181
+## Parity quirks (`PARITY`) — 180
 
 | Rust `file:line` | C++ citation | Note |
 |---|---|---|
-| `src/app/mod.rs:300` | `—` | empty New Game password enables cheats (design §1.3). |
-| `src/app/mod.rs:604` | `cOperationPurge.cpp:2848-3030` | `Render3D` order (`cOperationPurge.cpp:2848-3030`): building; |
-| `src/app/mod.rs:748` | `—` | the active robot is not drawn — the eye sits inside it |
-| `src/app/mod.rs:943` | `cMainWindow.cpp:923` | ExecuteCommands runs every frame (`cMainWindow.cpp:923`, |
-| `src/app/mod.rs:1006` | `—` | the cursor shows only on the 2D map / menus (`ShowCursor`, |
-| `src/audio/mod.rs:30` | `—` | `IDirectSoundBuffer::SetVolume` takes hundredths of a decibel |
-| `src/audio/mod.rs:479` | `—` | EnemyVisible checked/played BEFORE Targeted (code over docs). |
+| `src/app/mod.rs:291` | `—` | empty New Game password enables cheats (design §1.3). |
+| `src/app/mod.rs:595` | `cOperationPurge.cpp:2848-3030` | `Render3D` order (`cOperationPurge.cpp:2848-3030`): building; |
+| `src/app/mod.rs:739` | `—` | the active robot is not drawn — the eye sits inside it |
+| `src/app/mod.rs:934` | `cMainWindow.cpp:923` | ExecuteCommands runs every frame (`cMainWindow.cpp:923`, |
+| `src/app/mod.rs:994` | `—` | the cursor shows only on the 2D map / menus (`ShowCursor`, |
+| `src/audio/mod.rs:23` | `—` | `IDirectSoundBuffer::SetVolume` takes hundredths of a decibel |
+| `src/audio/mod.rs:210` | `—` | the steal decision compares distances from `live_listener`, |
 | `src/audio/spatial.rs:27` | `—` | reproduces the DS3D inverse-distance model with `flMinDistance |
 | `src/audio/spatial.rs:47` | `—` | DirectSound uses a **left-handed** coordinate system, so the |
 | `src/audio/spatial.rs:74` | `—` | `ListenerData` in `cOperationPurge::ExecuteCommands` |
-| `src/audio/spatial.rs:172` | `—` | DS3D is left-handed. Facing +Y, right = Z × Y = -X, so a |
+| `src/audio/spatial.rs:166` | `—` | DS3D is left-handed. Facing +Y, right = Z × Y = -X, so a |
 | `src/data/builtin.rs:15` | `cOperationPurge.cpp:2153-2199` | verified 11-value record, `cOperationPurge.cpp:2153-2199` (+ |
 | `src/data/mod.rs:167` | `—` | unused for turning (rate-limit code commented out, |
 | `src/data/mod.rs:190` | `—` | only consumed by dead code (`cObstaclePathFinder`, not |
 | `src/data/mod.rs:221` | `—` | an ammo center with no entry for a fired projectile type has |
 | `src/data/mod.rs:317` | `—` | a *delay* between emits (seconds, or distance units when |
 | `src/data/values.rs:17` | `—` | alpha is forced opaque here for every `[colors]` field except |
-| `src/game/mod.rs:37` | `—` | game speed starts paused at `0.0` after robot selection |
-| `src/game/mod.rs:43` | `—` | the enemy-visible HUD/alarm poll runs every 0.25 s of *game* time |
-| `src/game/mod.rs:47` | `—` | `MIN_VISIBLE_SIZE` — the smallest 2D-map window, in rooms |
-| `src/game/mod.rs:51` | `—` | `cOperationPurge::eObserverType` — which vantage the 3D camera + |
-| `src/game/mod.rs:165` | `cOperationPurge.cpp:144-147` | `SetGameParams` shows the whole building (`cOperationPurge.cpp:144-147`). |
-| `src/game/mod.rs:183` | `—` | the view-window update at the top of `Render2D` |
-| `src/game/mod.rs:218` | `cOperationPurge.cpp:3148-3163` | `cOperationPurge::WinToLog` (`cOperationPurge.cpp:3148-3163`) — |
-| `src/game/mod.rs:266` | `—` | the sim is frozen in the 2D map and behind any modal |
-| `src/game/mod.rs:292` | `—` | `m_bForceChange` — set by `Enter2DMode(true)` when the active |
-| `src/game/mod.rs:312` | `cOperationPurge.cpp:2037-2061` | `cOperationPurge::Enter2DMode` (`cOperationPurge.cpp:2037-2061`). |
-| `src/game/mod.rs:327` | `cOperationPurge.cpp:2015-2034` | `cOperationPurge::GetRobotUnderPoint` (`cOperationPurge.cpp:2015-2034`) |
-| `src/game/mod.rs:339` | `cOperationPurge.cpp:957-966` | `commandSelectObserverRobot` handler (`cOperationPurge.cpp:957-966`) |
-| `src/game/mod.rs:358` | `cOperationPurge.cpp:968-977` | `commandSelectObserverPosition` handler (`cOperationPurge.cpp:968-977`). |
-| `src/game/mod.rs:367` | `cOperationPurge.cpp:979-1018` | `commandSetObserver` handler (`cOperationPurge.cpp:979-1018`). |
-| `src/game/mod.rs:385` | `cOperationPurge.cpp:1020-1035` | `commandExit2DMode` handler (`cOperationPurge.cpp:1020-1035`). |
-| `src/game/mod.rs:450` | `—` | `cOperationPurge::StartGame` restart path |
-| `src/game/mod.rs:484` | `cOperationPurge.cpp:880-1225` | `cOperationPurge::ExecuteCommands` (`cOperationPurge.cpp:880-1225`). |
-| `src/game/mod.rs:507` | `—` | EndGame (Esc) / Restart (F4) are tested at the very top of |
-| `src/game/mod.rs:592` | `—` | no upper bound; only clamped below at 0 (`:1145`). |
-| `src/game/mod.rs:658` | `cOperationPurge.cpp:1064-1120` | the free-observer command block (`cOperationPurge.cpp:1064-1120` |
-| `src/game/mod.rs:763` | `cOperationPurge.cpp:1227-1420` | `cOperationPurge::FrameChange` (`cOperationPurge.cpp:1227-1420`). |
-| `src/game/mod.rs:770` | `—` | no objects move in the 2D map (`:1229-1233`); the sim is |
-| `src/game/mod.rs:813` | `—` | the win/lose/draw check at the END of `FrameChange` |
-| `src/game/mod.rs:830` | `—` | the targeted / above-center / enemy-visible flags computed in |
-| `src/game/mod.rs:869` | `cOperationPurge.cpp:1596-1634` | `GetVisibleRobots` (`cOperationPurge.cpp:1596-1634`) restricted |
-| `src/game/mod.rs:1001` | `cOperationPurge.cpp:3034-3056` | `cOperationPurge::SetupScene` view pose (`cOperationPurge.cpp:3034-3056`) |
+| `src/game/mod.rs:36` | `—` | game speed starts paused at `0.0` after robot selection |
+| `src/game/mod.rs:42` | `—` | the enemy-visible HUD/alarm poll runs every 0.25 s of *game* time |
+| `src/game/mod.rs:46` | `—` | `MIN_VISIBLE_SIZE` — the smallest 2D-map window, in rooms |
+| `src/game/mod.rs:50` | `—` | `cOperationPurge::eObserverType` — which vantage the 3D camera + |
+| `src/game/mod.rs:160` | `cOperationPurge.cpp:144-147` | `SetGameParams` shows the whole building (`cOperationPurge.cpp:144-147`). |
+| `src/game/mod.rs:178` | `—` | the view-window update at the top of `Render2D` |
+| `src/game/mod.rs:213` | `cOperationPurge.cpp:3148-3163` | `cOperationPurge::WinToLog` (`cOperationPurge.cpp:3148-3163`) — |
+| `src/game/mod.rs:261` | `—` | the sim is frozen in the 2D map and behind any modal |
+| `src/game/mod.rs:287` | `—` | `m_bForceChange` — set by `Enter2DMode(true)` when the active |
+| `src/game/mod.rs:307` | `cOperationPurge.cpp:2037-2061` | `cOperationPurge::Enter2DMode` (`cOperationPurge.cpp:2037-2061`). |
+| `src/game/mod.rs:322` | `cOperationPurge.cpp:2015-2034` | `cOperationPurge::GetRobotUnderPoint` (`cOperationPurge.cpp:2015-2034`) |
+| `src/game/mod.rs:334` | `cOperationPurge.cpp:957-966` | `commandSelectObserverRobot` handler (`cOperationPurge.cpp:957-966`) |
+| `src/game/mod.rs:353` | `cOperationPurge.cpp:968-977` | `commandSelectObserverPosition` handler (`cOperationPurge.cpp:968-977`). |
+| `src/game/mod.rs:362` | `cOperationPurge.cpp:979-1018` | `commandSetObserver` handler (`cOperationPurge.cpp:979-1018`). |
+| `src/game/mod.rs:380` | `cOperationPurge.cpp:1020-1035` | `commandExit2DMode` handler (`cOperationPurge.cpp:1020-1035`). |
+| `src/game/mod.rs:445` | `—` | `cOperationPurge::StartGame` restart path |
+| `src/game/mod.rs:479` | `cOperationPurge.cpp:880-1225` | `cOperationPurge::ExecuteCommands` (`cOperationPurge.cpp:880-1225`). |
+| `src/game/mod.rs:502` | `—` | EndGame (Esc) / Restart (F4) are tested at the very top of |
+| `src/game/mod.rs:587` | `—` | no upper bound; only clamped below at 0 (`:1145`). |
+| `src/game/mod.rs:649` | `cOperationPurge.cpp:1064-1120` | the free-observer command block (`cOperationPurge.cpp:1064-1120` |
+| `src/game/mod.rs:754` | `cOperationPurge.cpp:1227-1420` | `cOperationPurge::FrameChange` (`cOperationPurge.cpp:1227-1420`). |
+| `src/game/mod.rs:761` | `—` | no objects move in the 2D map (`:1229-1233`); the sim is |
+| `src/game/mod.rs:804` | `—` | the win/lose/draw check at the END of `FrameChange` |
+| `src/game/mod.rs:821` | `—` | the targeted / above-center / enemy-visible flags computed in |
+| `src/game/mod.rs:860` | `cOperationPurge.cpp:1596-1634` | `GetVisibleRobots` (`cOperationPurge.cpp:1596-1634`) restricted |
+| `src/game/mod.rs:992` | `cOperationPurge.cpp:3034-3056` | `cOperationPurge::SetupScene` view pose (`cOperationPurge.cpp:3034-3056`) |
 | `src/game/newgame.rs:23` | `—` | an empty password string enables cheats |
 | `src/game/newgame.rs:30` | `cMainWindow.cpp:758` | `szPassword[40]` (`cMainWindow.cpp:758`) — the Win32 edit control |
 | `src/game/newgame.rs:77` | `—` | Cancel behaviour differs by whether a game is already running |
 | `src/game/newgame.rs:103` | `cMainWindow.cpp:760-761` | empty password ⇒ cheats on (`cMainWindow.cpp:760-761`). |
 | `src/game/screens.rs:26` | `—` | `cOperationPurge::ExecuteCommands` game-over message text |
-| `src/input/commands.rs:13` | `—` | variant order matches `cGameData::s_aszCommandsNames` |
-| `src/input/commands.rs:178` | `—` | transcribed from the original `GameData.xml` `fire_command`s. |
-| `src/input/commands.rs:255` | `cGameData.cpp:17-54` | pins the eCommand ABI (cGameData.cpp:17-54). Index N here |
-| `src/input/commands.rs:289` | `—` | bExactModifiers = false — a command with no required |
-| `src/input/keys.rs:470` | `—` | extra buttons don't bind (only 3 tracked in the original). |
+| `src/input/commands.rs:7` | `—` | variant order matches `cGameData::s_aszCommandsNames` |
+| `src/input/commands.rs:118` | `—` | transcribed from the original `GameData.xml` `fire_command`s. |
+| `src/input/commands.rs:170` | `cGameData.cpp:17-54` | pins the eCommand ABI (cGameData.cpp:17-54). |
+| `src/input/commands.rs:186` | `—` | bExactModifiers = false — a command with no required |
+| `src/math/d3dx.rs:512` | `—` | NaN in -> NaN out (no finiteness guard); the "NaN on zero |
 | `src/math/intersect.rs:42` | `Intersect.h:107` | `Intersect.h:107,115` — literally `1.0`, the same value as a |
 | `src/math/intersect.rs:984` | `—` | a line that passes fully through a symmetric box (both |
-| `src/math/mod.rs:14` | `Functions.cpp:8` | `Functions.cpp:8` `Equals` uses an **absolute** epsilon of |
-| `src/math/mod.rs:23` | `Functions.cpp:83-86` | `Functions.cpp:83-86` — `fabsf (fNumber1 - fNumber2) <= COMPARE_TOLERANCE` |
-| `src/math/mod.rs:30` | `Functions.cpp:56-62` | `Functions.cpp:56-62` `Between` — inclusive range test in either |
-| `src/math/mod.rs:43` | `Functions.cpp:78-81` | `Functions.cpp:78-81` `Sign` — `fNumber >= 0.0f ? 1.0f : -1.0f` |
-| `src/math/mod.rs:55` | `Functions.cpp:64-75` | `Functions.cpp:64-75` `Floor` — a truncation-based `floor` that |
-| `src/math/mod.rs:95` | `Functions.cpp:191-200` | `Functions.cpp:191-200` `GetAngle(pt2Point1, pt2Point2)` = |
-| `src/math/mod.rs:109` | `Functions.cpp:157-164` | `Functions.cpp:157-164` `SphereCoord` (source-map §3.7) — |
-| `src/math/mod.rs:127` | `Functions.cpp:166-174` | `Functions.cpp:166-174` `AcceleratePoint(fTime, pt3Position, |
-| `src/math/mod.rs:157` | `Functions.cpp:83-86` | Functions.cpp:83-86 uses `<=`, so a difference of exactly |
+| `src/math/mod.rs:15` | `Functions.cpp:8` | `Functions.cpp:8` `Equals` uses an **absolute** epsilon of |
+| `src/math/mod.rs:24` | `Functions.cpp:83-86` | `Functions.cpp:83-86` — `fabsf (fNumber1 - fNumber2) <= COMPARE_TOLERANCE` |
+| `src/math/mod.rs:31` | `Functions.cpp:56-62` | `Functions.cpp:56-62` `Between` — inclusive range test in either |
+| `src/math/mod.rs:44` | `Functions.cpp:78-81` | `Functions.cpp:78-81` `Sign` — `fNumber >= 0.0f ? 1.0f : -1.0f` |
+| `src/math/mod.rs:56` | `Functions.cpp:64-75` | `Functions.cpp:64-75` `Floor` — a truncation-based `floor` that |
+| `src/math/mod.rs:96` | `Functions.cpp:191-200` | `Functions.cpp:191-200` `GetAngle(pt2Point1, pt2Point2)` = |
+| `src/math/mod.rs:110` | `Functions.cpp:157-164` | `Functions.cpp:157-164` `SphereCoord` (source-map §3.7) — |
+| `src/math/mod.rs:128` | `Functions.cpp:166-174` | `Functions.cpp:166-174` `AcceleratePoint(fTime, pt3Position, |
+| `src/math/mod.rs:158` | `Functions.cpp:83-86` | Functions.cpp:83-86 uses `<=`, so a difference of exactly |
 | `src/maze/building.rs:512` | `—` | ported from `cBuilding.cpp`. Wall existence is read through |
 | `src/maze/building.rs:564` | `cBuilding.cpp:164-208` | `cBuilding::IntersectRect` (`cBuilding.cpp:164-208`) — static |
 | `src/maze/building.rs:599` | `—` | `cBuilding::IntersectMovingRect` -> `GetIntersectedWalls` |
@@ -101,8 +101,7 @@ harvested straight from those comments.
 | `src/path/mod.rs:253` | `cPathFinder.cpp:501-518` | `cLowLevelPathFinder::FindPath` (`cPathFinder.cpp:501-518`). |
 | `src/path/nodes.rs:28` | `cPathFinder.cpp:14` | `cPathFinder.cpp:14` `s_nNodesPerPoint = 256` — the hash |
 | `src/path/nodes.rs:66` | `cNodeList.cpp:19-23` | `cNodeList::Reset` (`cNodeList.cpp:19-23`) — clears the |
-| `src/profiler.rs:101` | `—` | `cProfileNode::GetSubNode` linear-scans siblings by name. |
-| `src/render/d3dx.rs:512` | `—` | NaN in -> NaN out (no finiteness guard); the "NaN on zero |
+| `src/profiler.rs:103` | `—` | `cProfileNode::GetSubNode` linear-scans siblings by name. |
 | `src/render/mesh.rs:31` | `—` | normals are stored and uploaded exactly as computed — never |
 | `src/render/overlay.rs:303` | `—` | `cOverlay2D::StartRender` visibility bounds — whole rooms fully |
 | `src/render/overlay.rs:417` | `cOperationPurge.cpp:2762-2835` | the building half of `Render2D` (`cOperationPurge.cpp:2762-2835`): |
@@ -204,13 +203,14 @@ harvested straight from those comments.
 | `tests/game.rs:174` | `cOperationPurge.cpp:1190` | no move keys down ⇒ cruise (`cOperationPurge.cpp:1190`). |
 | `tests/game.rs:433` | `—` | FrameChange returns before the game-over check in 2D (`:1229`). |
 
-## Hardening guards (`GUARD`) — 3
+## Hardening guards (`GUARD`) — 4
 
 | Rust `file:line` | C++ citation | Note |
 |---|---|---|
-| `src/error.rs:15` | `—` | replaces `cGameData::ReadFileXML`'s ignored `TiXmlDocument::LoadFile` |
-| `src/error.rs:46` | `—` | the C++ performs zero header validation — a signed `cx`/`cy` pair |
-| `src/error.rs:85` | `—` | building meshes keep 16-bit indices (design §1.3); a mesh |
+| `src/data/gamedata.rs:53` | `—` | the original never validated `*Ref` indices and would index out |
+| `src/error.rs:14` | `—` | replaces `cGameData::ReadFileXML`'s ignored `TiXmlDocument::LoadFile` |
+| `src/error.rs:47` | `—` | the C++ performs zero header validation — a signed `cx`/`cy` pair |
+| `src/error.rs:85` | `—` | building meshes keep 16-bit indices; a mesh that would |
 
 ## Corrected divergences (`FIX`) — 2
 

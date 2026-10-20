@@ -3,7 +3,7 @@
 `assets/GameData.toml` is the data-driven definition of the game:
 robot / AI / weapon tuning, teams, supply centers, particle effects, and
 colors. It is a **one-time XML→TOML conversion** of the original
-`GameData.xml` (design §4.2) — same *field inventory* as the 2011 build (minus
+`GameData.xml` — same *field inventory* as the 2011 build (minus
 the asset paths and key bindings, which are now compiled in), but a
 serde-friendly, human-editable shape. The binary only ever parses TOML; it is
 **not** interchangeable with the original XML.
@@ -17,10 +17,9 @@ second mutate pass.
 
 | Authoring form | In `.toml` | In memory |
 |---|---|---|
-| Boolean / integer / float | native TOML scalar | `bool` / `u32` / `f32` (non-negative validated on load) |
+| Boolean / integer / float | native TOML scalar | `bool` / `u32` / `f32` (see [Validation](#validation)) |
 | **Color** (opaque) | `"0xRRGGBB"` hex string | `Rgba { r, g, b, a }` f32, `a = 1.0` |
 | **AlphaColor** (with alpha) | `"0xAARRGGBB"` hex string — **alpha first** | `Rgba` f32 |
-| **Key** | display-name string (e.g. `"F4"`, `"Left mouse button"`) | ordinal in the 100-entry `src/input/keys.rs` table |
 | **Ref** | `"None"` or a 0-based integer index | `Option<Index>`; bounds-validated **after** the whole file loads (GUARD) |
 
 Notes:
@@ -32,7 +31,7 @@ Notes:
   and all particle-stage colors. Alpha is **forced opaque** for the other
   seven `[colors]` fields and for team colors (`src/data/values.rs`).
 - **Angles are authored in degrees for readability and converted to radians**
-  on load, on exactly these fields (design §4.2, `cOperationPurge.cpp:2600-2691`
+  on load, on exactly these fields (`cOperationPurge.cpp:2600-2691`
   — nothing else is transformed):
   `robot_type.rotate_rate`, `projectile.accuracy`,
   `particle_type.initial_rotation(+_variance)`,
@@ -42,6 +41,23 @@ Notes:
   **load error** (GUARD) — refs are validated once the whole file is parsed so
   forward references resolve.
 - Unknown keys are a load error.
+
+## Validation
+
+After parsing, `src/data/gamedata.rs` rejects data the game can't run with
+(each a load error naming the offending field):
+
+- Any `Ref` index past the end of the list it points into.
+- `robot_type`, `ai_robot_type`, and every `*_center_groups.center_type` set
+  to `"None"`: the spawners need them.
+- A `[[projectile_types]]` list that isn't exactly three entries with
+  `"Rocket"` second: the fire bindings, projectile sprite, and fire/collision
+  sounds are compiled in per projectile index.
+- Negative (or NaN) values for `building.wall_width/room_size/ceiling_height`,
+  robot `accel/brake_decel/friction_decel/max_speed/max_visible_dist`, AI
+  `desired_speed/scan_delay/min_wall_dist`, and projectile
+  `initial_speed/size/hole_size`. Other floats are not range-checked
+  (`emit_phi_min` and `rise_acceleration` are legitimately negative).
 
 ## Tables
 
@@ -168,10 +184,9 @@ emitter type:
 - **`[[particle_effect_definitions.components]]`** —
   `{ particle_type = <Ref>, particle_emitter_type = <Ref> }`.
 
-## Golden test
+## Tests
 
-The shipped `assets/GameData.toml` is pinned by an `insta` snapshot of the
-fully-parsed `GameData` (post-conversion colors, radians, 36 commands, `None`
-refs). Negative tests assert that an unknown key and an out-of-range `Ref`
-each error, and that fewer than 36 commands is a shape error
-(`tests/gamedata.rs`).
+`tests/gamedata.rs` spot-checks the shipped file's converted values
+(alpha-first colors, radians, `None` refs, the projectile list) and runs each
+validation rule above against an in-memory minimal document via
+`gamedata::parse`.

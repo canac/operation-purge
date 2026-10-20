@@ -3,7 +3,7 @@
 # gen_quirks.sh — regenerate docs/quirks.md from the parity ledger comments.
 #
 # The port carries three greppable comment tags, each citing the C++ ground
-# truth by `file:line` (see /Users/caleb/Downloads/programs/OperationPurge):
+# truth by `file:line` (see reference/OperationPurge, git-ignored):
 #
 #   // PARITY:  behaviour deliberately reproduced bug-for-bug from the 2011 C++
 #   // GUARD:   a hardening check the original lacked (validation the C++ omits)
@@ -46,7 +46,7 @@ mkdir -p docs
   echo "Every intentional divergence from — or bug-for-bug reproduction of —"
   echo "the 2011 C++/Direct3D9 original is pinned in the source with one of"
   echo "three tags, each citing the C++ ground truth by \`file:line\`"
-  echo "(\`~/Downloads/programs/OperationPurge\`). This table is that ledger,"
+  echo "(\`reference/OperationPurge\`). This table is that ledger,"
   echo "harvested straight from those comments."
   echo
   echo "| Tag | Meaning |"
@@ -81,8 +81,8 @@ emit_section() {
         note="$(printf '%s' "$body" | sed -E "s#.*(//|///) $tag: *##")"
 
         # Best-effort C++ citation: first `Word.cpp:NN` / `Word.h:NN[-NN]`
-        # token on the tag line (many comments cite design §refs instead;
-        # those show a dash here and carry the ref inline in the note).
+        # token on the tag line (comments without one show a dash here
+        # and carry any reference inline in the note).
         cite="$(printf '%s' "$body" \
                  | grep -oE '[A-Za-z_][A-Za-z0-9_]*\.(cpp|h):[0-9]+(-[0-9]+)?' \
                  | head -n1 || true)"

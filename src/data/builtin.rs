@@ -1,6 +1,6 @@
 //! `Objects.txt` / `LightData.txt` → compiled-in constants.
 //!
-//! User decision: these two tiny fixed-value text files are hardcoded as
+//! These two tiny fixed-value text files are hardcoded as
 //! Rust `const`s instead of being read at runtime — no parser, no file,
 //! no missing-file failure path.
 //!
