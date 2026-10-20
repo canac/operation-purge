@@ -23,15 +23,13 @@
 use crate::data::{AiRobotType, GameData};
 use crate::ids::{CenterId, RobotId};
 use crate::math::intersect::{point_rect, MovingRect, PlaneAxis, Rect};
-use crate::math::{between, equals, get_angle};
+use crate::math::{between, equals, f_max, f_min, get_angle};
 use crate::path::astar::AStar;
 use crate::path::{find_high_level_path, find_low_level_path, RoomGraph, LOOKAHEAD_CAP};
 use crate::rng::GameRng;
 use crate::sim::center::{Center, CenterKind};
 use crate::sim::projectile::solve_aim;
-use crate::sim::robot::{
-    f_max, f_min, fire_gate_aligned, Collision2D, CollisionKind, FireRequest, Robot, Throttle,
-};
+use crate::sim::robot::{fire_gate_aligned, Collision2D, CollisionKind, FireRequest, Robot, Throttle};
 use glam::{Vec2, Vec3};
 use std::collections::{BTreeMap, VecDeque};
 use std::f32::consts::PI;

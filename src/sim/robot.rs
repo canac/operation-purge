@@ -1,7 +1,7 @@
-//! `cRobot`: two-phase kinematics, throttle, energy, firing, crash damage
-//! (source-map §3.5), ported verbatim from `cRobot.cpp`.
+//! `cRobot`: two-phase kinematics, throttle, energy, firing, crash damage,
+//! ported verbatim from `cRobot.cpp`.
 //!
-//! PARITY (design §1.3, preserved verbatim):
+//! PARITY (preserved verbatim):
 //! - Fire-alignment gate `pi * 0.025` with **no 2π wrap** (`cRobot.cpp:366`).
 //! - Turning is instantaneous: `m_angDirection = m_angDirectionDesired`,
 //!   the rate-limit code commented out (`cRobot.cpp:117-120`).
@@ -16,7 +16,7 @@ use crate::ids::{ProjectileTypeId, RobotId, RobotTypeId, TeamId};
 use crate::math::intersect::{
     Intersection2D, MovingBox, MovingRect, PlaneAxis, Rect, no_intersection_2d,
 };
-use crate::math::{equals, sign};
+use crate::math::{equals, f_clamp, f_max, f_min, length2d, sign};
 use crate::rng::GameRng;
 use crate::sim::ai::AiRuntime;
 use glam::{Vec2, Vec3};
@@ -45,7 +45,7 @@ pub enum Throttle {
 
 /// `cRobot::tProjectileTypeState` (`cRobot.h:103-110`). `projectiles_left`
 /// is `f32` (not the original `UINT`) so the unlisted-ammo `+inf` transfer
-/// quirk is representable without a guard (design §1.3, §4.1).
+/// quirk is representable without a guard.
 #[derive(Clone, Debug)]
 pub struct ProjectileTypeState {
     pub projectile_type: ProjectileTypeId,
@@ -292,7 +292,7 @@ impl Robot {
             return;
         }
         self.desired_speed += accel_speed;
-        self.desired_speed = self.desired_speed.clamp(-self.max_speed, self.max_speed);
+        self.desired_speed = f_clamp(self.desired_speed, -self.max_speed, self.max_speed);
     }
 
     /// `cRobot::Rotate` (`cRobot.cpp:394-400`): `m_angDirectionDesired += x`.
@@ -310,7 +310,7 @@ impl Robot {
             return;
         }
         self.barrel_elevation += ang_elevate;
-        self.barrel_elevation = self.barrel_elevation.clamp(0.0, PI * 0.25);
+        self.barrel_elevation = f_clamp(self.barrel_elevation, 0.0, PI * 0.25);
     }
 
     // ----- kinematics (two-phase) -----
@@ -325,7 +325,7 @@ impl Robot {
                     -f_min(self.speed.abs(), sign(self.speed) * self.friction_decel * dt);
                 let max_robot_accel = self.accel * dt;
                 let mut robot_accel = self.desired_speed - self.speed;
-                robot_accel = robot_accel.clamp(-max_robot_accel, max_robot_accel);
+                robot_accel = f_clamp(robot_accel, -max_robot_accel, max_robot_accel);
                 robot_accel += -friction; // accelerate to counteract friction
                 (robot_accel, friction)
             }
@@ -535,10 +535,9 @@ impl Robot {
             (state.accuracy, state.fire_rate)
         };
 
-        let ang_theta = self.direction + rng.frand() * accuracy * 2.0 - accuracy;
-        let mut ang_phi =
-            self.barrel_elevation + (rng.frand() * accuracy * 2.0 - accuracy) * 0.25;
-        ang_phi = ang_phi.clamp(0.0, PI * 0.25);
+        let ang_theta = rng.rand_variance(self.direction, accuracy);
+        let ang_phi = self.barrel_elevation + rng.rand_variance(0.0, accuracy) * 0.25;
+        let ang_phi = f_clamp(ang_phi, 0.0, PI * 0.25);
 
         self.direction = ang_theta;
         self.barrel_elevation = ang_phi;
@@ -563,8 +562,8 @@ impl Robot {
     }
 
     /// PARITY: `cRobot::IncreaseAmmo` (`cRobot.cpp:461-471`) — clamped to the
-    /// starting count. `n` may be `+inf` for the unlisted-transfer-rate quirk
-    /// (design §1.3), in which case `min(+inf, start) == start` fills the
+    /// starting count. `n` may be `+inf` for the unlisted-transfer-rate quirk,
+    /// in which case `min(+inf, start) == start` fills the
     /// magazine; **no guard** (defined IEEE `min`).
     pub fn increase_ammo(&mut self, ty: ProjectileTypeId, n: f32) {
         if let Some(state) = self.projectile_state_mut(ty) {
@@ -596,7 +595,7 @@ impl Robot {
 /// PARITY: `cRobot::Fire (const cRobot&)` fire-alignment gate
 /// (`cRobot.cpp:366`): `fabs (m_angDirection - m_angDirectionDesired) <
 /// D3DX_PI * 0.025f`. **No 2π wrap** — a heading just past the ±2π boundary
-/// fails the gate even when geometrically aligned (design §1.3).
+/// fails the gate even when geometrically aligned.
 pub fn fire_gate_aligned(direction: f32, direction_desired: f32) -> bool {
     (direction - direction_desired).abs() < PI * 0.025
 }
@@ -612,30 +611,4 @@ pub fn firing_offset(theta: f32, phi: f32) -> Vec3 {
         OBJECTS.tread_radius * 2.0 + OBJECTS.barrel_radius,
     );
     crate::math::sphere_coord(theta, phi, OBJECTS.barrel_length * 2.0) + barrel_offset
-}
-
-/// `fMin` (`Functions.cpp:24-27`): `a < b ? a : b`.
-#[inline]
-pub fn f_min(a: f32, b: f32) -> f32 {
-    if a < b {
-        a
-    } else {
-        b
-    }
-}
-
-/// `fMax` (`Functions.cpp:30-33`): `a > b ? a : b`.
-#[inline]
-pub fn f_max(a: f32, b: f32) -> f32 {
-    if a > b {
-        a
-    } else {
-        b
-    }
-}
-
-/// `Length2D` (`Functions.cpp:148-153`): `sqrtf (x*x + y*y)`.
-#[inline]
-pub fn length2d(v: Vec2) -> f32 {
-    (v.x * v.x + v.y * v.y).sqrt()
 }

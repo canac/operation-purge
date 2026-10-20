@@ -1,10 +1,9 @@
 //! Swept AABB/plane/trajectory intersection tests, ported verbatim from
-//! `Intersect.h/.cpp` (source-map §3.7, §7; design §1.3).
+//! `Intersect.h/.cpp`.
 //!
 //! PARITY: face tests run in a **fixed order** — `+x, -x, +y, -y, +z, -z`
-//! — and the first hit *in that order* wins, not the earliest-time hit
-//! (source-map §7, design §1.3). Bounce-face selection depends on this
-//! order in corner cases where first-hit-order != earliest-time.
+//! — and the first hit *in that order* wins, not the earliest-time hit.
+//! Bounce-face selection depends on this order in corner cases where first-hit-order != earliest-time.
 //! The no-intersection sentinel time is `1.0` (`Intersect.h:107,115`).
 //!
 //! Every function here mirrors one `Intersect::*` free function from the
@@ -908,7 +907,7 @@ mod tests {
         assert_eq!(result.time, NO_HIT_TIME);
     }
 
-    /// PARITY corner case (design §1.3/§6): `RectLine` (the 2D twin of
+    /// PARITY corner case: `RectLine` (the 2D twin of
     /// `TrajectoryBox`'s face loop) returns the **first face tested that
     /// reports a hit**, not the hit with the smallest `time`. This line
     /// truly enters the box through -y at t=0.2 (the geometrically

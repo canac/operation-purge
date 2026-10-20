@@ -1,4 +1,4 @@
-//! M7 AI & pathfinding tests (design §6, §7 M7):
+//! AI & pathfinding tests:
 //! - the wall-bounce heading snap and the turn-TOWARD-collider quirk
 //!   (`cAIRobot.cpp:130,135-148`) as direct unit checks;
 //! - a scripted scenario where an AI robot drives to an ammo center, brakes
@@ -6,10 +6,10 @@
 //! - a scripted scenario where an AI robot hunts and damages an enemy;
 //! - a two-robot collision that exercises the turn-toward-collider path;
 //! - the SEEDED AI-vs-AI battle on Small2.maz as the deterministic CI
-//!   regression anchor (replaces M6's scripted harness; both are kept).
+//!   regression anchor.
 //!
 //! (The A* room-sequence hand-trace + node-hash tests live in the `path`
-//! module's own unit tests, design §6.)
+//! module's own unit tests)
 
 use operation_purge::data::gamedata;
 use operation_purge::data::{CenterGroup, GameData, GameDefinition, RobotGroup, TeamDefinition};

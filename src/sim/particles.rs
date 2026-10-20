@@ -31,16 +31,6 @@ pub const MAX_PARTICLES: usize = 1024;
 /// `s_MaximumHoles` (`cOperationPurge.cpp:19`).
 pub const MAX_HOLES: usize = 256;
 
-/// PARITY: `fRandVariance` (`Functions.cpp:96-99`).
-fn rand_variance(rng: &mut GameRng, median: f32, variance: f32) -> f32 {
-    median + rng.frand() * variance * 2.0 - variance
-}
-
-/// PARITY: `fRandMinMax` (`Functions.cpp:102-105`).
-fn rand_min_max(rng: &mut GameRng, min: f32, max: f32) -> f32 {
-    min + rng.frand() * (max - min)
-}
-
 // ============================ cParticle ============================
 
 /// A live particle (`cParticle`, `cParticle.cpp`). Kinematics:
@@ -75,9 +65,9 @@ impl Particle {
         rng: &mut GameRng,
     ) -> Self {
         let opts = &game_data.particle_types[particle_type.get() as usize];
-        let lifetime_total = rand_variance(rng, opts.lifetime, opts.lifetime_variance);
-        let initial_rotation = rand_variance(rng, 0.0, opts.initial_rotation_variance);
-        let rotation_rate = rand_variance(rng, 0.0, opts.rotation_rate_variance);
+        let lifetime_total = rng.rand_variance(opts.lifetime, opts.lifetime_variance);
+        let initial_rotation = rng.rand_variance(0.0, opts.initial_rotation_variance);
+        let rotation_rate = rng.rand_variance(0.0, opts.rotation_rate_variance);
         Self {
             particle_type,
             position,
@@ -292,7 +282,7 @@ impl Default for HoleFifo {
 /// ported verbatim from `cParticleEmitter::GetEmitVelocity`
 /// (`cParticleEmitter.cpp:96-127`). Returns the quaternion `(x,y,z,w)` —
 /// either the normalized shortest-arc quaternion, or the `(0,0,1,0)`
-/// fallback (`w <= 0`). Degenerate cases (design §1.3, source-map §7):
+/// fallback (`w <= 0`). Degenerate cases:
 /// - **zero velocity** -> `D3DXVec3Normalize(0)` divides by zero -> `NaN`;
 ///   the quaternion stays `NaN` (neither `w < 0` nor `Equals(w,0)` fire).
 /// - **anti-parallel** (velocity along -Z) -> `w` normalizes to `0`,
@@ -344,8 +334,8 @@ impl ParticleEmitter {
         rng: &mut GameRng,
     ) -> Self {
         let opts = &game_data.particle_emitter_types[emitter_type.get() as usize];
-        let lifetime_total = rand_variance(rng, opts.lifetime, opts.lifetime_variance);
-        let next_emit_delay = rand_variance(rng, opts.emit_rate, opts.emit_rate_variance);
+        let lifetime_total = rng.rand_variance(opts.lifetime, opts.lifetime_variance);
+        let next_emit_delay = rng.rand_variance(opts.emit_rate, opts.emit_rate_variance);
         Self {
             emitter_type,
             particle_type,
@@ -367,7 +357,7 @@ impl ParticleEmitter {
     /// PARITY: `GetEmitDelay` (`cParticleEmitter.cpp:130-133`).
     fn emit_delay(&self, game_data: &GameData, rng: &mut GameRng) -> f32 {
         let opts = &game_data.particle_emitter_types[self.emitter_type.get() as usize];
-        rand_variance(rng, opts.emit_rate, opts.emit_rate_variance)
+        rng.rand_variance(opts.emit_rate, opts.emit_rate_variance)
     }
 
     /// PARITY: `cParticleEmitter::GetEmitVelocity(vec3Emitter)`
@@ -375,9 +365,9 @@ impl ParticleEmitter {
     /// (if relative) the quaternion rotation onto the emitter velocity.
     fn emit_velocity(&self, parent: Vec3, game_data: &GameData, rng: &mut GameRng) -> Vec3 {
         let opts = &game_data.particle_emitter_types[self.emitter_type.get() as usize];
-        let theta = rand_min_max(rng, opts.emit_theta_min, opts.emit_theta_max);
-        let phi = rand_min_max(rng, opts.emit_phi_min, opts.emit_phi_max);
-        let speed = rand_variance(rng, opts.emit_velocity, opts.emit_velocity_variance);
+        let theta = rng.rand_min_max(opts.emit_theta_min, opts.emit_theta_max);
+        let phi = rng.rand_min_max(opts.emit_phi_min, opts.emit_phi_max);
+        let speed = rng.rand_variance(opts.emit_velocity, opts.emit_velocity_variance);
         let emit = sphere_coord(theta, phi, speed);
         if opts.emit_relative {
             let (x, y, z, w) = emit_orientation_quaternion(parent);
@@ -463,8 +453,7 @@ impl ParticleEmitter {
 /// do (the owner deletes them) — PARITY, `cParticleEffect.cpp:73-97`.
 pub struct ParticleEffect {
     pub emitters: Vec<ParticleEmitter>,
-    /// Inverse of the C++ `m_bStatic`. Kept as `is_dynamic` (design §2
-    /// naming): dynamic effects (`is_dynamic == true`) never self-prune.
+    /// Inverse of the C++ `m_bStatic`: dynamic effects (`is_dynamic == true`) never self-prune.
     pub is_dynamic: bool,
 }
 
@@ -560,7 +549,7 @@ mod tests {
         gamedata::load(&path).expect("GameData.toml")
     }
 
-    // ---- emitter degenerate-case quaternions (design §6) ----
+    // ---- emitter degenerate-case quaternions ----
 
     #[test]
     fn emit_orientation_zero_velocity_is_nan() {
@@ -605,7 +594,7 @@ mod tests {
         assert!(v.x.is_nan() || v.y.is_nan() || v.z.is_nan());
     }
 
-    // ---- arena replace-oldest-by-life-fraction (design §6) ----
+    // ---- arena replace-oldest-by-life-fraction ----
 
     fn test_particle(portion_num: f32, portion_den: f32) -> Particle {
         // Construct a particle with a known life fraction directly.
@@ -676,7 +665,7 @@ mod tests {
         Box3 { center: Vec3::ZERO, size: Vec3::splat(1e6) }
     }
 
-    // ---- fEmitRate delay / accumulation (design §6) ----
+    // ---- fEmitRate delay / accumulation ----
 
     fn make_emitter(
         gd: &GameData,
@@ -737,7 +726,7 @@ mod tests {
         assert_eq!(arena.live_count(), 3);
     }
 
-    // ---- sub-frame interpolation count / gap-free trail (design §6) ----
+    // ---- sub-frame interpolation count / gap-free trail ----
 
     #[test]
     fn distance_emitter_spawn_count_scales_with_travel_not_dt() {

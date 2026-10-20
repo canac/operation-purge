@@ -123,8 +123,7 @@ pub struct Game {
     pub map_size: Vec2,
 
     /// The player's control for the possessed robot this frame, built in
-    /// `execute_commands` and consumed by `advance` (so it survives the
-    /// AI pass that skips the possessed robot).
+    /// `execute_commands` and consumed by `advance`.
     player_input: Option<(RobotId, RobotInput)>,
 
     /// `m_bIgnoreGameEnd` — set by the GameOver "keep watching" choice; while
@@ -775,7 +774,7 @@ impl Game {
                     || type_pressed
                 {
                     self.world
-                        .add_projectile(ty, None, observer_pos, 0.0, theta, phi);
+                        .add_projectile(ty, observer_pos, 0.0, theta, phi);
                     self.cheat_fire_cooldown += 0.03;
                 }
             }
@@ -789,8 +788,8 @@ impl Game {
     // ============================= advance =============================
 
     /// PARITY: `cOperationPurge::FrameChange` (`cOperationPurge.cpp:1227-1420`).
-    /// Called only when focused (design §5.1). Drives the AI (skipping the
-    /// possessed robot), commits the player's input, steps the world by
+    /// Called only when focused (design §5.1). Commits the player's input
+    /// for the possessed robot, steps the world (AI included) by
     /// `real_dt * game_speed`, forces the 2D map if the active robot died, and
     /// refreshes the HUD poll flags. Objects are **not** moved in 2D mode
     /// (`:1229-1233`).

@@ -1,9 +1,9 @@
 //! World-scale building geometry + wall collision queries, ported from
-//! `cBuilding` (source-map §3.4). `cBuilding : public cMaze` adds room
+//! `cBuilding`. `cBuilding : public cMaze` adds room
 //! scale (`fRoomSize`, `fWallWidth`, `fCeilingHeight` from
 //! `[building]`) and all wall-collision math on top of the bit grid.
 //!
-//! GUARD (design §1.3): out-of-grid wall queries return an explicit
+//! GUARD: out-of-grid wall queries return an explicit
 //! "no wall" rather than the original's unchecked array read — this
 //! matches what the non-crashing C++ reads effectively did, so open-edge
 //! mazes stay legal and their emergent behavior is preserved.
@@ -12,7 +12,7 @@
 //! `cBuilding::UpdateWallOutline`/`CalculateWallVertices`/
 //! `CalculateWallPolygons`/`GetNextDirection`/`GetNextVertex`,
 //! `cBuilding.cpp:276-960`) turns the maze bit grid into closed wall
-//! polygons, consumed by `render::building3d` (M4). The **first** polygon
+//! polygons, consumed by `render::building3d`. The **first** polygon
 //! it emits is the outer boundary (it contains the globally smallest wall
 //! vertex) — `render::building3d` gives that polygon reversed winding, a
 //! PARITY behavior from `cBuilding3D.cpp:187-193`.
@@ -140,19 +140,6 @@ impl Ord for WallVertex {
 }
 
 impl Building {
-    /// Room `(x,y)` occupies `[x*room_size,(x+1)*room_size] x
-    /// [y*room_size,(y+1)*room_size]` (libs-map §3, "Maze -> world"), from
-    /// the floor (z=0) up to the ceiling (z=ceiling_height).
-    pub fn room_bounds(&self, x: i32, y: i32) -> (Vec3, Vec3) {
-        let min = Vec3::new(x as f32 * self.room_size, y as f32 * self.room_size, 0.0);
-        let max = Vec3::new(
-            (x + 1) as f32 * self.room_size,
-            (y + 1) as f32 * self.room_size,
-            self.ceiling_height,
-        );
-        (min, max)
-    }
-
     /// World-space size of the whole building (`cBuilding::GetSize`,
     /// `cBuilding.cpp:52`): `(cx*room, cy*room, ceiling)`.
     pub fn size(&self) -> Vec3 {
@@ -221,8 +208,9 @@ impl Building {
     // --- wall-outline tracer (cBuilding.cpp:276-960) -------------------
 
     /// Direction-indexed surrounding walls of room `(x, y)` (`cMaze::
-    /// GetSurroundingWalls`, `cMaze.cpp:307`): `[Up, Left, Down, Right]`.
-    fn maze_surrounding_walls(&self, x: i32, y: i32) -> [bool; 4] {
+    /// GetSurroundingWalls`, `cMaze.cpp:307`): `[Up, Left, Down, Right]`
+    /// (`eDirection` order, not `Maze::surrounding_walls`' order).
+    pub fn surrounding_walls_dir(&self, x: i32, y: i32) -> [bool; 4] {
         // abWalls[Up]=GetWall(X,Y,wallX); [Left]=GetWall(X,Y,wallY);
         // [Down]=GetWall(X,Y+1,wallX); [Right]=GetWall(X+1,Y,wallY).
         [
@@ -249,7 +237,7 @@ impl Building {
         };
         let px = v.position_x + center_off_x;
         let py = v.position_y + center_off_y;
-        let mut w = self.maze_surrounding_walls(px, py);
+        let mut w = self.surrounding_walls_dir(px, py);
         // The far-side walls do not matter for the corner.
         match v.corner {
             Corner::TopLeft => {
@@ -383,12 +371,7 @@ impl Building {
             valid[rotate_direction(last, Direction::Down).ord()] = false;
         }
 
-        for d in Direction::ALL {
-            if valid[d.ord()] {
-                return Some(d);
-            }
-        }
-        None
+        Direction::ALL.into_iter().find(|d| valid[d.ord()])
     }
 
     /// `cBuilding::GetNextVertex` (`cBuilding.cpp:689`): step from `vertex`
@@ -509,20 +492,16 @@ impl Building {
     }
 
     // ===================== wall collision (cBuilding.cpp) =====================
-    // PARITY: ported from `cBuilding.cpp`. Wall existence is read through
-    // `Maze::surrounding_walls` (the GUARD out-of-grid=no-wall accessor,
-    // design §1.3). These are the single source for wall collision — both
-    // `sim::world` (robot/projectile) and `path` (the AI room graph) call them.
+    // Wall existence goes through the GUARD out-of-grid=no-wall accessors;
+    // `sim::world` and `path` both collide through these.
 
-    /// `cMaze::GetWall(x, y, dir)` for the two wall directions.
-    /// `WallDir::X` = `surrounding_walls[top]` = `h_wall(x,y)`;
-    /// `WallDir::Y` = `surrounding_walls[left]` = `v_wall(x,y)`.
+    /// `cMaze::GetWall(x, y, dir)` (`cMaze.cpp:246`): the top (`X`) or left
+    /// (`Y`) edge of room `(x, y)`.
     pub fn wall_at(&self, dir: WallDir, x: i32, y: i32) -> bool {
-        let sw = self.maze.surrounding_walls(x, y);
         match dir {
-            WallDir::X => sw[0], // top edge of room (x,y)
-            WallDir::Y => sw[2], // left edge of room (x,y)
-            WallDir::Invalid => false, // tracer sentinel; never a collision query
+            WallDir::X => self.maze.wall_x(x, y),
+            WallDir::Y => self.maze.wall_y(x, y),
+            WallDir::Invalid => false,
         }
     }
 
@@ -765,28 +744,13 @@ mod tests {
     }
 
     #[test]
-    fn room_bounds_uses_shipped_scale_constants() {
-        let building = tiny_building();
-        let (min, max) = building.room_bounds(1, 0);
-        assert_eq!(min, Vec3::new(10.0, 0.0, 0.0));
-        assert_eq!(max, Vec3::new(20.0, 10.0, 5.0));
-    }
-
-    #[test]
-    fn room_bounds_room_zero_starts_at_origin() {
-        let building = tiny_building();
-        let (min, _max) = building.room_bounds(0, 0);
-        assert_eq!(min, Vec3::new(0.0, 0.0, 0.0));
-    }
-
-    #[test]
     fn one_room_traces_a_single_four_segment_outer_polygon() {
         let b = one_room_bordered();
         let (polygons, wall_segments) = b.wall_polygons();
         assert_eq!(polygons.len(), 1, "one bordered room => one polygon");
         assert_eq!(wall_segments, 4, "square frame has 4 wall segments");
 
-        // Verbatim traced order (hand-computed, see design §7 M4 test note):
+        // Verbatim traced order (hand-computed):
         // start = smallest vertex (0,0,BR); trace Down, Right, Up, Left.
         let p = &polygons[0];
         assert_eq!(p.len(), 5, "closed polygon repeats its start vertex");

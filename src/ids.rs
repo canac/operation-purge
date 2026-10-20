@@ -1,8 +1,8 @@
-//! Strongly-typed entity/definition IDs (design §2).
+//! Strongly-typed entity/definition IDs.
 //!
 //! Every ID is a thin `u32` newtype. The C++ used raw `UINT` positional
-//! indices with a per-family `Invalid*ID = (T)-1` sentinel
-//! (libs-map §2.2, §4.1); the port instead represents "no id"/"none"
+//! indices with a per-family `Invalid*ID = (T)-1` sentinel;
+//! the port instead represents "no id"/"none"
 //! as `Option<IdType>` everywhere a C++ call site compared against the
 //! sentinel — there is no in-band invalid value.
 
@@ -35,7 +35,7 @@ macro_rules! def_id {
 
 def_id!(
     /// Identifies one live robot instance in `sim::World` (`std::map<tRobotID, cAIRobot*>`
-    /// key in the original, source-map §2).
+    /// key in the original).
     RobotId
 );
 def_id!(
@@ -43,37 +43,37 @@ def_id!(
     CenterId
 );
 def_id!(
-    /// 0-based index into `GameData.robot_types` (libs-map §2.2 `tRobotTypeID`).
+    /// 0-based index into `GameData.robot_types` (`tRobotTypeID`).
     RobotTypeId
 );
 def_id!(
-    /// 0-based index into `GameData.ai_robot_types` (libs-map §2.2 `tAIRobotTypeID`).
+    /// 0-based index into `GameData.ai_robot_types` (`tAIRobotTypeID`).
     AiRobotTypeId
 );
 def_id!(
-    /// 0-based index into `GameData.projectile_types` (libs-map §2.2 `tProjectileTypeID`).
+    /// 0-based index into `GameData.projectile_types` (`tProjectileTypeID`).
     ProjectileTypeId
 );
 def_id!(
-    /// 0-based index into `GameData.particle_types` (libs-map §2.2 `tParticleTypeID`).
+    /// 0-based index into `GameData.particle_types` (`tParticleTypeID`).
     ParticleTypeId
 );
 def_id!(
     /// 0-based index into `GameData.particle_emitter_types`
-    /// (libs-map §2.2 `tParticleEmitterTypeID`).
+    /// (`tParticleEmitterTypeID`).
     EmitterTypeId
 );
 def_id!(
     /// 0-based index into `GameData.particle_effect_definitions`
-    /// (libs-map §2.2 `tParticleEffectDefinitionID`).
+    /// (`tParticleEffectDefinitionID`).
     EffectDefId
 );
 def_id!(
-    /// 0-based index into `GameData.game_definitions` (libs-map §2.2 `tGameDefinitionID`).
+    /// 0-based index into `GameData.game_definitions` (`tGameDefinitionID`).
     GameDefId
 );
 def_id!(
-    /// 0-based index into a `GameDefinition`'s team list (libs-map §2.2 `tTeamDefinitionID`).
+    /// 0-based index into a `GameDefinition`'s team list (`tTeamDefinitionID`).
     TeamId
 );
 

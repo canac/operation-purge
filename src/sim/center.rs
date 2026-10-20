@@ -1,13 +1,13 @@
 //! `cCenter`/`cAmmoCenter`/`cEnergyCenter`/`cHealthCenter` collapsed into
-//! one enum (design §2 mapping table; source-map §3.4), ported from
+//! one enum, ported from
 //! `cCenter.cpp`.
 //!
 //! PARITY: a robot must be **completely stationary** with its bounding
 //! rect fully inside the center square; one robot docked at a time;
-//! transfer is rate-limited (`cCenter.cpp:78-104`, design §1 "Centers").
+//! transfer is rate-limited (`cCenter.cpp:78-104`).
 //! Ammo transfer for a projectile type with no listed rate is `0.0` ⇒
 //! `dt / 0.0 = +inf` ammo — defined IEEE division, preserved with **no
-//! guard code** (design §1.3). The stateful transfer *selection* (which
+//! guard code**. The stateful transfer *selection* (which
 //! robot docks, last-transfer bookkeeping) lives in `sim::world` because
 //! it needs the robot map; this module holds the per-center data + the
 //! two pure predicates.

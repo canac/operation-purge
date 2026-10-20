@@ -1,11 +1,10 @@
 //! A* core: binary-heap open list (`cPriorityQueue`) + the search loop
-//! (`cPathFinder::FindPath`), source-map §3.7. Costs are Euclidean with an
+//! (`cPathFinder::FindPath`). Costs are Euclidean with an
 //! admissible heuristic, so paths are shortest.
 //!
 //! This module ports the room-graph-agnostic core only: [`AStar::search`]
 //! takes caller-supplied `neighbors`/`is_goal` closures (`cPathFinder`'s
-//! `GetNeighbors`/`IsGoalPoint` virtuals are the room-graph-specific
-//! pieces and land at M7 in `path/mod.rs`, alongside
+//! `GetNeighbors`/`IsGoalPoint` virtuals live in `path/mod.rs`, with
 //! `cHighLevelPathFinder`/`cLowLevelPathFinder`).
 
 use super::nodes::NodeArena;
@@ -147,8 +146,7 @@ impl AStar {
     }
 
     /// `cPathFinder::FindPath` (`cPathFinder.cpp:206-303`), generalized
-    /// over caller-supplied `is_goal`/`neighbors` (the room-graph-specific
-    /// `GetNeighbors`/`IsGoalPoint` overrides land at M7). Returns the
+    /// over caller-supplied `is_goal`/`neighbors`. Returns the
     /// waypoint sequence from `start` to the discovered goal point
     /// (inclusive of both ends), or `None` if the open list empties
     /// without reaching a goal.
@@ -228,14 +226,6 @@ impl AStar {
         None
     }
 
-    /// Number of distinct positions visited by the most recent
-    /// [`search`](Self::search) call — a Rust-only diagnostic mirroring
-    /// what `cNodeList::GetNodesUsed` fed into the original's debug log
-    /// (`cPathFinder.cpp:257-259,297-299`).
-    pub fn nodes_used(&self) -> usize {
-        self.arena.used()
-    }
-
     fn reconstruct_path(&self, goal_idx: usize) -> Vec<Vec2> {
         // PARITY: `cPathFinder.cpp:225-237` — walk parents back to the
         // start (whose `pParent == NULL`), collecting in reverse, then
@@ -266,7 +256,7 @@ mod tests {
 
     /// Simple 5x5 grid graph with 4-directional neighbors and a blocked
     /// column, used to exercise the generic search core without any
-    /// room-graph specifics (those land at M7).
+    /// room-graph specifics.
     fn grid_neighbors(blocked: &[(i32, i32)]) -> impl Fn(Vec2) -> Vec<Vec2> + '_ {
         move |p: Vec2| {
             let (x, y) = (p.x as i32, p.y as i32);
@@ -319,19 +309,5 @@ mod tests {
         let goal = Vec2::new(4.0, 0.0);
         let path = astar.search(start, goal, |p| p == goal, grid_neighbors(&blocked));
         assert!(path.is_none());
-    }
-
-
-    #[test]
-    fn repeated_searches_reuse_the_arena_via_reset() {
-        let mut astar = AStar::new();
-        let start = Vec2::new(0.0, 0.0);
-        let goal = Vec2::new(2.0, 0.0);
-        astar.search(start, goal, |p| p == goal, grid_neighbors(&[])).unwrap();
-        let used_first = astar.nodes_used();
-        astar.search(start, goal, |p| p == goal, grid_neighbors(&[])).unwrap();
-        let used_second = astar.nodes_used();
-        // Reset means the second search doesn't accumulate on top of the first.
-        assert_eq!(used_first, used_second);
     }
 }

@@ -1,20 +1,20 @@
-//! `cProjectile`: ballistic step, swept hits, Newton aim solver
-//! (source-map §3.5), ported from `cProjectile.cpp`.
+//! `cProjectile`: ballistic step, swept hits, Newton aim solver,
+//! ported from `cProjectile.cpp`.
 //!
-//! PARITY (design §1.3, preserved verbatim):
+//! PARITY (preserved verbatim):
 //! - Aim-solver time-of-flight derived from **X displacement only**
 //!   (`cProjectile.cpp:66-71`); the 0/0 -> NaN path near ±Y targets is
 //!   defined IEEE f32 behavior, preserved as-is (Newton fails to
 //!   converge -> shot misses; must not panic).
 //! - Sprite tint literally `(0,0,0,1)` — black silhouette under modulate
-//!   (`cProjectile.cpp:211`) — recorded here for the M9 renderer.
+//!   (`cProjectile.cpp:211`).
 //! - `AddCollision` keeps the collision with the **smallest** intersect
 //!   time (`cProjectile.cpp:180-187`); the initial sentinel time is `1.0`
 //!   (`ntr3NoIntersection`), so the first hit inside `[0,1)` always wins.
 
 use crate::data::GameData;
 use crate::ids::{ProjectileTypeId, RobotId};
-use crate::math::accelerate_point;
+use crate::math::{accelerate_point, f_max};
 use crate::math::intersect::{
     Intersection3D, MovingBox, PlaneAxis, Trajectory, no_intersection_3d, trajectory_moving_box,
 };
@@ -30,33 +30,23 @@ pub struct Collision3D {
     pub kind: CollisionKind,
     pub robot_id: Option<RobotId>,
     pub wall_axis: PlaneAxis,
-    pub position: Vec3,
-    pub direction: Vec3,
 }
 
 impl Collision3D {
     /// `NoCollision3D`: `{ntr3NoIntersection, collisionNone, idInvalidRobot,
-    /// planeInvalid, (0,0,0), (0,0,0)}`.
+    /// planeInvalid}` (its never-read position/direction are not ported).
     pub fn none() -> Self {
         Self {
             ntr: no_intersection_3d(),
             kind: CollisionKind::None,
             robot_id: None,
             wall_axis: PlaneAxis::Invalid,
-            position: Vec3::ZERO,
-            direction: Vec3::ZERO,
         }
     }
 }
 
 pub struct Projectile {
     pub projectile_type: ProjectileTypeId,
-    /// The firer, for reference only. PARITY: the original tracks no owner
-    /// and a projectile **can hit the robot that fired it**
-    /// (`IntersectProjectileObjects` tests every robot,
-    /// `cOperationPurge.cpp:1820-1830`) — this field is never used to
-    /// exclude a robot from the swept test.
-    pub owner: Option<RobotId>,
     pub position: Vec3,
     pub velocity: Vec3,
     /// `m_trjTrajectory` — the segment swept this frame (set by [`step`]).
@@ -65,8 +55,7 @@ pub struct Projectile {
     pub collided: Collision3D,
     /// The projectile's ongoing trail effect (`travel_effect`), if its type
     /// defines one. A **dynamic** effect that follows the projectile and is
-    /// dropped with it when the projectile is destroyed (owner-deletes;
-    /// M9 wiring, `sim::world`).
+    /// dropped with it when the projectile is destroyed (owner-deletes).
     pub travel_effect: Option<crate::sim::particles::ParticleEffect>,
 }
 
@@ -76,7 +65,6 @@ impl Projectile {
     /// `speed` is the firer's forward speed.
     pub fn new(
         projectile_type: ProjectileTypeId,
-        owner: Option<RobotId>,
         position: Vec3,
         speed: f32,
         theta: f32,
@@ -86,7 +74,6 @@ impl Projectile {
         let velocity = crate::math::sphere_coord(theta, phi, initial_speed + speed);
         Self {
             projectile_type,
-            owner,
             position,
             velocity,
             trajectory: Trajectory {
@@ -129,8 +116,6 @@ impl Projectile {
                 kind: CollisionKind::Robot,
                 robot_id: Some(robot_id),
                 wall_axis: PlaneAxis::Invalid,
-                position: self.trajectory.start + self.trajectory.direction * ntr.time,
-                direction: self.trajectory.direction,
             };
             self.add_collision(collision);
         }
@@ -145,8 +130,6 @@ impl Projectile {
                 kind: CollisionKind::Wall,
                 robot_id: None,
                 wall_axis: ntr.plane.axis,
-                position: Vec3::ZERO,
-                direction: Vec3::ZERO,
             };
             self.add_collision(collision);
         }
@@ -169,8 +152,7 @@ impl Projectile {
     /// `fMax(0, damage + fRand()*variance*2 - variance)`.
     pub fn get_damage(&self, game_data: &GameData, rng: &mut GameRng) -> f32 {
         let opts = &game_data.projectile_types[self.projectile_type.get() as usize];
-        let variance = opts.damage_variance;
-        crate::sim::robot::f_max(0.0, opts.damage + rng.frand() * variance * 2.0 - variance)
+        f_max(0.0, rng.rand_variance(opts.damage, opts.damage_variance))
     }
 
     /// PARITY: `cProjectile::DisplayCollisionEffect` (`cProjectile.cpp:321-357`).
@@ -252,7 +234,7 @@ impl Projectile {
 /// on non-convergence. PARITY: a near-pure-±Y target makes `fCosTheta == 0`
 /// so the X-only `fTime = dx / (cosTheta*cosPhi*speed)` is `0/0 = NaN`;
 /// Newton then never converges (the `|Δ| <= tol` check is always false for
-/// `NaN`) and the loop falls through to `None` — no panic (design §1.3).
+/// `NaN`) and the loop falls through to `None` — no panic.
 pub fn solve_aim(position: Vec3, target: Vec3, speed: f32, gravity: f32) -> Option<(f32, f32)> {
     // theta = GetAngle(Make2D(position), Make2D(target))
     let theta = crate::math::get_angle(position.truncate(), target.truncate());

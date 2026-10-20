@@ -1,11 +1,11 @@
-//! Room-level + corner-waypoint pathfinding strategies (source-map §3.7),
+//! Room-level + corner-waypoint pathfinding strategies,
 //! ported from `cPathFinder.cpp`'s `cHighLevelPathFinder` /
 //! `cLowLevelPathFinder`. These supply the room-graph-specific
-//! `GetNeighbors`/`IsGoalPoint` that the M2 [`astar::AStar`] core
+//! `GetNeighbors`/`IsGoalPoint` that the [`astar::AStar`] core
 //! (`cPathFinder::FindPath`) is generic over.
 //!
 //! `cObstaclePathFinder` is DEAD code and is intentionally NOT ported
-//! (design §2 mapping table; it was only ever reached from
+//! (it was only ever reached from
 //! `cAIRobot::PreventCollision`, itself commented out).
 //!
 //! PARITY:
@@ -68,14 +68,7 @@ impl<'a> RoomGraph<'a> {
     /// `[Up, Down, Left, Right]`).
     fn surrounding_walls_dir(&self, p: Vec2) -> [bool; 4] {
         let rs = self.building.room_size;
-        let x = (p.x / rs) as i32;
-        let y = (p.y / rs) as i32;
-        [
-            self.building.wall_at(WallDir::X, x, y),     // Up    = h(x,y)
-            self.building.wall_at(WallDir::Y, x, y),     // Left  = v(x,y)
-            self.building.wall_at(WallDir::X, x, y + 1), // Down  = h(x,y+1)
-            self.building.wall_at(WallDir::Y, x + 1, y), // Right = v(x+1,y)
-        ]
+        self.building.surrounding_walls_dir((p.x / rs) as i32, (p.y / rs) as i32)
     }
 
     /// `cMaze::GetWallCorners` (`cMaze.cpp:316-322`), returned in `eCorner`

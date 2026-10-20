@@ -1,16 +1,14 @@
-//! Legacy wildcard maze-file search, ported from `cFileSearch`
-//! (libs-map §1.4, §4.4).
+//! Legacy wildcard maze-file search, ported from `cFileSearch`.
 //!
 //! PARITY: the matcher is **non-backtracking** — after a `*`, it jumps to
 //! the first occurrence of the next literal character and never retries
 //! (`cFileSearch.cpp:250`), so e.g. `*n.txt` can false-negative against
 //! `main.txt`. ASCII-only case-insensitive. This quirk is observable
-//! (maze-pool membership) and is preserved verbatim rather than fixed
-//! (design §1.3). Full matcher + `walkdir` recursion land at M1.
+//! (maze-pool membership) and is preserved verbatim rather than fixed.
 
 /// `SplitFileName`: splits on the last `/` or `\`; `"."` for bare names
 /// with no extension separator implied — path defaults to `"."` for a
-/// bare filename (libs-map §1.4).
+/// bare filename.
 pub fn split_file_name(name: &str) -> (&str, &str) {
     match name.rfind(['/', '\\']) {
         Some(idx) => (&name[..idx], &name[idx + 1..]),

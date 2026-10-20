@@ -1,4 +1,4 @@
-//! M6 simulation-core tests (design §6, §7 M6): kinematics/collision/
+//! Simulation-core tests: kinematics/collision/
 //! crash-damage/fire-gate/scatter/last-match/aim-NaN/inf-ammo parity, the
 //! win/lose/draw conditions, and the headless determinism harness (the
 //! regression anchor: Small2.maz + GameData.toml, two teams, fixed scripted
@@ -273,7 +273,7 @@ fn aim_solver_reachable_target_converges() {
 }
 
 // --------------------------------------------------------------------
-// 8. unlisted-type ammo -> +inf (design §1.3, no guard)
+// 8. unlisted-type ammo -> +inf (no guard)
 // --------------------------------------------------------------------
 
 #[test]

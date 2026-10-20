@@ -1,13 +1,12 @@
-//! Shared seeded RNG facade (design §1.2, §1.4.11, §1.5).
+//! Shared seeded RNG facade.
 //!
 //! PARITY: the original seeds a single `srand(GetTickCount())` and calls
-//! `rand()` everywhere — maze pick, scatter, damage variance, spawn timing
-//! (source-map §7, §8.14). `RAND_MAX == 32767` on the MSVCRT the game
+//! `rand()` everywhere — maze pick, scatter, damage variance, spawn timing.
+//! `RAND_MAX == 32767` on the MSVCRT the game
 //! shipped against, so `fRand() = rand() / (RAND_MAX + 1)` has **15-bit**
 //! granularity — not the full precision of a modern PRNG's float output.
 //! The port keeps one shared seeded `SmallRng` behind `frand()` and
-//! reproduces that same 15-bit granularity (design §1.5.11: no
-//! bit-compatibility with msvcrt `rand()` is claimed, only the same
+//! reproduces that same 15-bit granularity (no bit-compatibility with msvcrt `rand()` is claimed, only the same
 //! statistical coarseness).
 
 use rand::rngs::SmallRng;
@@ -24,18 +23,9 @@ impl GameRng {
         }
     }
 
-    /// Time-seeded, for normal (non-`--fixed-dt`/non-`--seed`) runs.
-    pub fn from_time() -> Self {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0);
-        Self::from_seed(seed)
-    }
-
     /// PARITY: `fRand() = rand() / (RAND_MAX + 1)` — a value in `[0, 1)`
-    /// quantized to 1/32768 (15-bit) steps, matching `RAND_MAX == 32767`
-    /// (source-map §7). Downstream scatter/AI-timing math depends on this
+    /// quantized to 1/32768 (15-bit) steps, matching `RAND_MAX == 32767`.
+    /// Downstream scatter/AI-timing math depends on this
     /// coarseness, not on `SmallRng`'s native float precision.
     pub fn frand(&mut self) -> f32 {
         const GRANULARITY: u32 = 1 << 15; // RAND_MAX + 1
@@ -43,8 +33,21 @@ impl GameRng {
         bucket as f32 / GRANULARITY as f32
     }
 
+    /// `fRandVariance` (`Functions.cpp:96-99`): uniform in
+    /// `median ± variance`. The original divides by `RAND_MAX` (inclusive
+    /// upper bound); this reuses [`frand`](Self::frand) and stays half-open.
+    pub fn rand_variance(&mut self, median: f32, variance: f32) -> f32 {
+        median + self.frand() * variance * 2.0 - variance
+    }
+
+    /// `fRandMinMax` (`Functions.cpp:102-105`): uniform in `[min, max)`,
+    /// with the same divisor deviation as [`rand_variance`](Self::rand_variance).
+    pub fn rand_min_max(&mut self, min: f32, max: f32) -> f32 {
+        min + self.frand() * (max - min)
+    }
+
     /// Escape hatch for callers that need a full-precision range/shuffle
-    /// (e.g. the maze wildcard matcher's random pick, design §4.4) rather
+    /// (e.g. the maze wildcard matcher's random pick) rather
     /// than the quantized `frand()` facade.
     pub fn inner_mut(&mut self) -> &mut SmallRng {
         &mut self.inner

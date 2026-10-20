@@ -1,7 +1,7 @@
-//! Simulation core (design §2, §5.1), mirroring `cOperationPurge`'s sim
-//! half (source-map §2, §3.4) plus the entity classes it owns.
+//! Simulation core, mirroring `cOperationPurge`'s sim
+//! half plus the entity classes it owns.
 //!
-//! Ownership/iteration-order contract (PARITY-critical, design §5.1):
+//! Ownership/iteration-order contract (PARITY-critical):
 //! robots live in a `BTreeMap<RobotId, Robot>` — ascending-ID iteration
 //! provably matches `std::map<tRobotID, cAIRobot*>` over the
 //! `cIDGenerator` sequence; projectiles live in a `Vec` with in-order

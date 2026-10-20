@@ -1,10 +1,10 @@
-//! A* node arena, replacing `cNodeList` + `cElementBank<T>`
-//! (libs-map §1.5, source-map §3.7), ported from `cNodeList.h/.cpp` +
+//! A* node arena, replacing `cNodeList` + `cElementBank<T>`,
+//! ported from `cNodeList.h/.cpp` +
 //! `cElementBank.h/.cpp` + `Node.h`.
 //!
 //! Semantics preserved: `reset()` = cursor back to 0, stale contents left
 //! as-is (`cElementBank::Reset` just zeroes `m_nElementsUsed`, callers
-//! fully overwrite on reuse, libs-map §1.5); initial capacity 256
+//! fully overwrite on reuse); initial capacity 256
 //! (`cElementBank` ctor call in `cNodeList::cNodeList`, `cNodeList.cpp:8`),
 //! 2x growth (`cElementBank::GrowElementBank`, `cElementBank.cpp:56-67`).
 //! Node identity = position quantized to 1/256 unit (`s_nNodesPerPoint =
@@ -13,7 +13,7 @@
 //! truncated into an `unsigned short` (`cNodeList::HashPoint`,
 //! `cNodeList.cpp:79-84`); the float->u16 truncation keeps C truncation-
 //! toward-zero semantics via `as i64 as u16`, never a saturating `as u16`
-//! (design §1.3 FIX ledger) — `as i64` truncates toward zero exactly like
+//! — `as i64` truncates toward zero exactly like
 //! a C `(int)`/`(unsigned short)` cast on an in-range value, and the
 //! subsequent `as u16` reproduces the 16-bit truncation the original gets
 //! from casting into `unsigned short`.
@@ -66,7 +66,7 @@ impl NodeArena {
     /// PARITY: `cNodeList::Reset` (`cNodeList.cpp:19-23`) — clears the
     /// hash map and rewinds the arena cursor; does **not** touch existing
     /// `Node` contents (matching `cElementBank::Reset`'s "stale contents
-    /// left as-is" semantics, libs-map §1.5). Safe because [`get_node`]
+    /// left as-is" semantics). Safe because [`get_node`]
     /// unconditionally overwrites every field of a freshly (re)used slot.
     pub fn reset(&mut self) {
         self.used = 0;
@@ -76,7 +76,7 @@ impl NodeArena {
     /// Quantizes a single world-space coordinate to 1/256-unit steps,
     /// keeping C truncation-toward-zero and 16-bit wraparound semantics.
     ///
-    /// PARITY (design §1.3 FIX ledger): `cNodeList::HashPoint`
+    /// PARITY: `cNodeList::HashPoint`
     /// (`cNodeList.cpp:79-84`) computes `(unsigned short) (coord *
     /// nNodesPerPoint)`. A C++ float-to-`unsigned short` cast of an
     /// in-range value truncates toward zero then keeps the low 16 bits;
@@ -151,6 +151,7 @@ impl NodeArena {
     }
 
     /// `cNodeList::GetNodesUsed` (`cNodeList.cpp:45-48`).
+    #[cfg(test)]
     pub fn used(&self) -> usize {
         self.used
     }

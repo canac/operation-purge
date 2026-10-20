@@ -1,9 +1,5 @@
-//! Shared math helpers ported from `Functions.h/.cpp` (source-map §3.7),
-//! plus the `Rgba` color type used by `data/` and `render/`.
-//!
-//! Full bodies (SphereCoord, AcceleratePoint) land at M2 alongside
-//! `math::d3dx`; this module fixes their signatures now because `sim/`
-//! and `render/` stubs already need to name them.
+//! Shared math helpers ported from `Functions.h/.cpp`, plus the `Rgba`
+//! color type used by `data/` and `render/`.
 
 pub mod d3dx;
 pub mod intersect;
@@ -13,8 +9,8 @@ use glam::Vec3;
 /// Absolute-epsilon float comparison.
 ///
 /// PARITY: `Functions.cpp:8` `Equals` uses an **absolute** epsilon of
-/// `1e-7`, not a relative/ULP comparison — load-bearing in at least 6
-/// behaviors per source-map §7 (fire-alignment gate, wall-bounce heading
+/// `1e-7`, not a relative/ULP comparison — load-bearing in several
+/// behaviors (fire-alignment gate, wall-bounce heading
 /// snap, center-transfer gating, etc). Do not swap in a relative
 /// comparison here even though `1e-7` absolute is unusual for large
 /// magnitudes; the original's inputs are always small (radians, unit
@@ -28,11 +24,50 @@ pub fn equals(a: f32, b: f32) -> bool {
     (a - b).abs() <= EPSILON
 }
 
+/// `fMin` (`Functions.cpp:24-27`): `a < b ? a : b`, so a NaN `a` yields `b`.
+#[inline]
+pub fn f_min(a: f32, b: f32) -> f32 {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+/// `fMax` (`Functions.cpp:30-33`): `a > b ? a : b`, so a NaN `a` yields `b`.
+#[inline]
+pub fn f_max(a: f32, b: f32) -> f32 {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+
+/// `fClamp` (`Functions.cpp:45-51`): raise below `min`, else lower above
+/// `max`. Never panics: `min > max` yields `min`, and NaN passes through.
+#[inline]
+pub fn f_clamp(n: f32, min: f32, max: f32) -> f32 {
+    if n < min {
+        min
+    } else if n > max {
+        max
+    } else {
+        n
+    }
+}
+
+/// `Length2D` (`Functions.cpp:148-153`): `sqrtf (x*x + y*y)`.
+#[inline]
+pub fn length2d(v: glam::Vec2) -> f32 {
+    (v.x * v.x + v.y * v.y).sqrt()
+}
+
 /// PARITY: `Functions.cpp:56-62` `Between` — inclusive range test in either
 /// bound order, **plus** an epsilon-`Equals` fallback against either bound
 /// (catches values that miss the inclusive range by float rounding but are
 /// `Equals`-close to a boundary). Used pervasively by `math::intersect` and
-/// (at M6/M7) `sim::robot`/`sim::ai` heading checks.
+/// the `sim::robot`/`sim::ai` heading checks.
 #[inline]
 pub fn between(number: f32, bound1: f32, bound2: f32) -> bool {
     (number >= bound1 && number <= bound2)
@@ -43,7 +78,7 @@ pub fn between(number: f32, bound1: f32, bound2: f32) -> bool {
 
 /// PARITY: `Functions.cpp:78-81` `Sign` — `fNumber >= 0.0f ? 1.0f : -1.0f`
 /// (note: `Sign(0.0) == 1.0`, and `Sign(-0.0) == 1.0` since `-0.0 >= 0.0`).
-/// Consumed by `sim::robot::GetMoveAccel` friction sign (M6).
+/// Consumed by the `sim::robot` friction sign (`GetMoveAccel`).
 #[inline]
 pub fn sign(n: f32) -> f32 {
     if n >= 0.0 {
@@ -57,7 +92,7 @@ pub fn sign(n: f32) -> f32 {
 /// matches C `(int) floorf` for the value range the sim uses: non-negative
 /// values truncate toward zero (== floor); negative values truncate then
 /// subtract 1 unless the value was already integral. Used by the building
-/// swept-collision grid walk (`cBuilding::GetIntersectedWallsPortion`, M6).
+/// swept-collision grid walk (`cBuilding::GetIntersectedWallsPortion`).
 #[inline]
 pub fn floor_i32(n: f32) -> i32 {
     if n >= 0.0 {
@@ -75,8 +110,8 @@ pub fn floor_i32(n: f32) -> i32 {
 /// RGBA color in final (post-`TransformGameData`) form.
 ///
 /// Always plain `f32` components — a packed `COLORREF`/`D3DCOLOR` `u32`
-/// never exists in this port's memory (design §4.1: colors are converted
-/// once, at `GameData.toml` deserialize time, in `data::values`).
+/// never exists in this port's memory: colors are converted once, at
+/// `GameData.toml` deserialize time, in `data::values`.
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct Rgba {
     pub r: f32,
@@ -95,7 +130,7 @@ impl Rgba {
 
 /// PARITY: `Functions.cpp:191-200` `GetAngle(pt2Point1, pt2Point2)` =
 /// `atan2f((to - from).y, (to - from).x)`. Consumed by the projectile aim
-/// solver (`sim::projectile::solve_aim`) and (at M7) `sim::ai` targeting.
+/// solver (`sim::projectile::solve_aim`) and `sim::ai` targeting.
 #[inline]
 pub fn get_angle(from: glam::Vec2, to: glam::Vec2) -> f32 {
     let d = to - from;
@@ -107,10 +142,10 @@ pub fn get_angle(from: glam::Vec2, to: glam::Vec2) -> f32 {
 /// from the X/Y plane toward +Z, `radius` the resulting vector's
 /// magnitude.
 ///
-/// PARITY: `Functions.cpp:157-164` `SphereCoord` (source-map §3.7) —
+/// PARITY: `Functions.cpp:157-164` `SphereCoord` —
 /// `x = cos(theta)*cos(phi)*r`, `y = sin(theta)*cos(phi)*r`, `z = sin(phi)*r`;
 /// Z is the pole axis, matching the game's Z-up convention. Consumed by
-/// `cOperationPurge::SetupScene` (camera look direction) and (at M6/M9)
+/// `cOperationPurge::SetupScene` (camera look direction),
 /// `sim::projectile` (muzzle velocity) / `sim::particles` (emit cone).
 pub fn sphere_coord(theta: f32, phi: f32, radius: f32) -> Vec3 {
     let x = theta.cos() * phi.cos() * radius;
@@ -126,14 +161,9 @@ pub fn sphere_coord(theta: f32, phi: f32, radius: f32) -> Vec3 {
 /// unchanged and not returned.
 ///
 /// PARITY: `Functions.cpp:166-174` `AcceleratePoint(fTime, pt3Position,
-/// vec3Velocity, fGravityAccel)` — `pos += vel*time; pos.z -= 0.5*g*time^2`
-/// (source-map §3.7). Consumed by `math::intersect::trajectory_plane` and
-/// (at M6/M9) `sim::projectile`/`sim::particles`.
-///
-/// Deviation note: the M0-era stub declared a different, semi-implicit
-/// `(pos, vel, accel, dt) -> (new_pos, new_vel)` signature; the actual
-/// C++ function is this simpler closed-form position-only evaluation, so
-/// the signature was corrected to match `Functions.cpp` verbatim.
+/// vec3Velocity, fGravityAccel)` — `pos += vel*time; pos.z -= 0.5*g*time^2`.
+/// Consumed by `math::intersect::trajectory_plane`, `sim::projectile` and
+/// `sim::particles`.
 pub fn accelerate_point(time: f32, position: Vec3, velocity: Vec3, gravity_accel: f32) -> Vec3 {
     let mut result = position + velocity * time;
     result.z -= 0.5 * gravity_accel * time * time;
@@ -161,6 +191,15 @@ mod tests {
         // instead of being perturbed by f32 rounding near 1.0's ULP.
         assert!(equals(0.0, EPSILON));
         assert!(!equals(0.0, EPSILON * 1.5));
+    }
+
+    #[test]
+    fn f_clamp_never_panics_on_inverted_or_nan_bounds() {
+        assert_eq!(f_clamp(5.0, 0.0, 1.0), 1.0);
+        assert_eq!(f_clamp(-5.0, 0.0, 1.0), 0.0);
+        assert_eq!(f_clamp(0.5, 1.0, -1.0), 1.0);
+        assert!(f_clamp(f32::NAN, 0.0, 1.0).is_nan());
+        assert_eq!(f_clamp(0.5, f32::NAN, 1.0), 0.5);
     }
 
     #[test]

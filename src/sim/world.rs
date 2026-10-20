@@ -13,6 +13,7 @@
 use crate::data::GameData;
 use crate::ids::{CenterId, EffectDefId, GameDefId, RobotId, TeamId};
 use crate::maze::building::{Building, WallDir};
+use crate::math::f_min;
 use crate::math::intersect::{rect_rect, Box3, Rect};
 use crate::rng::GameRng;
 use crate::path::astar::AStar;
@@ -22,11 +23,11 @@ use crate::sim::center::{Center, CenterKind, Orientation};
 use crate::sim::idgen::IdGenerator;
 use crate::sim::particles::{Hole, HoleFifo, ParticleArena, ParticleEffect};
 use crate::sim::projectile::Projectile;
-use crate::sim::robot::{f_min, Collision2D, CollisionKind, FireRequest, Robot, Throttle};
+use crate::sim::robot::{Collision2D, CollisionKind, FireRequest, Robot, Throttle};
 use glam::{Vec2, Vec3};
 use std::collections::BTreeMap;
 
-/// `eStatus` (source-map §1): the game's win/lose/draw/ongoing state.
+/// `eStatus`: the game's win/lose/draw/ongoing state.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Status {
     /// No terminal condition yet (`statusNone`).
@@ -129,7 +130,7 @@ impl World {
     /// Builds a fresh world for the given game definition + active team,
     /// mirroring `SetGameParams` (`cOperationPurge.cpp:104-150`) then
     /// `StartGame` (`cOperationPurge.cpp:153-306`). `seed` drives the
-    /// shared RNG (design §1.5.11).
+    /// shared RNG.
     pub fn new(
         game_data: GameData,
         maze: crate::maze::Maze,
@@ -213,7 +214,7 @@ impl World {
                 }
             } else {
                 let g0 = groups[0].clone();
-                let next_spawn = self.rand_variance(g0.initial_delay, g0.initial_delay_variance);
+                let next_spawn = self.rng.rand_variance(g0.initial_delay, g0.initial_delay_variance);
                 let spawn_point = self.get_rect_position(Vec2::new(robot_size, robot_size));
                 crate::sim::spawn::SpawnInfo {
                     finished_spawning: false,
@@ -261,7 +262,7 @@ impl World {
                 if is_hand_driven(r, possessed) {
                     self.robots.get_mut(&id).unwrap().calc_new_position(dt);
                 } else if let Some(req) = self.with_ai(id, |ai| ai.calc_new_position_ai(dt)) {
-                    self.add_projectile(req.projectile_type, Some(id), req.position, req.speed, req.theta, req.phi);
+                    self.add_projectile(req.projectile_type, req.position, req.speed, req.theta, req.phi);
                 }
             }
         }
@@ -370,7 +371,7 @@ impl World {
     /// for every hand-driven robot: fire first (uses the *current* heading),
     /// then set move state, then apply rotate/elevate/accelerate deltas.
     fn apply_inputs(&mut self, possessed: Option<RobotId>) {
-        let mut requests: Vec<(RobotId, FireRequest)> = Vec::new();
+        let mut requests: Vec<FireRequest> = Vec::new();
         for (id, r) in self.robots.iter_mut() {
             if r.is_dead() || !is_hand_driven(r, possessed) {
                 continue;
@@ -378,7 +379,7 @@ impl World {
             let input = self.inputs.get(id).copied().unwrap_or_default();
             if input.fire {
                 if let Some(req) = r.projectile_fire_type().and_then(|ty| r.fire(ty, &mut self.rng)) {
-                    requests.push((*id, req));
+                    requests.push(req);
                 }
             }
             r.set_move_state(input.throttle);
@@ -387,19 +388,17 @@ impl World {
             r.accelerate(input.accel);
         }
 
-        for (owner, req) in requests {
-            self.add_projectile(req.projectile_type, Some(owner), req.position, req.speed, req.theta, req.phi);
+        for req in requests {
+            self.add_projectile(req.projectile_type, req.position, req.speed, req.theta, req.phi);
         }
     }
 
-    /// PARITY: `cOperationPurge::AddProjectile` (`cOperationPurge.cpp:1424+`) —
-    /// spawn one projectile (with its fire/travel particle effects) into the
-    /// world. `owner = None` is the observer-point cheat-fire case
-    /// (`cOperationPurge.cpp:1211-1218`), where no robot owns the shot.
+    /// PARITY: `cOperationPurge::AddProjectile` (`cOperationPurge.cpp:1441-1450`)
+    /// — spawn one projectile with its fire/travel particle effects. Shots
+    /// have no owner: a projectile can hit the robot that fired it.
     pub fn add_projectile(
         &mut self,
         projectile_type: crate::ids::ProjectileTypeId,
-        owner: Option<RobotId>,
         position: Vec3,
         speed: f32,
         theta: f32,
@@ -412,7 +411,6 @@ impl World {
         };
         let mut proj = Projectile::new(
             projectile_type,
-            owner,
             position,
             speed,
             theta,
@@ -524,9 +522,8 @@ impl World {
             let collision_effect = self.game_data.projectile_types[idx].collision_effect;
             proj.step(dt, gravity);
 
-            // M9: drive the trail effect to the projectile's new state so
-            // the emitter interpolates spawns along the traveled segment
-            // (gap-free at any game speed).
+            // Moving the trail to the new state lets the emitter interpolate
+            // spawns along the traveled segment (gap-free at any game speed).
             if let Some(eff) = proj.travel_effect.as_mut() {
                 eff.move_with(
                     dt,
@@ -585,7 +582,7 @@ impl World {
         self.projectiles = survivors;
     }
 
-    /// M9: spawn a **static** burst effect (fire/collision/destroy) at
+    /// Spawns a **static** burst effect (fire/collision/destroy) at
     /// `position` carrying `velocity`, if `def` is set. Static so `frame`
     /// prunes it once every emitter has expired.
     fn spawn_burst_effect(&mut self, def: Option<EffectDefId>, position: Vec3, velocity: Vec3) {
@@ -600,7 +597,7 @@ impl World {
     /// protect, so every dead robot is removed (the original keeps a
     /// dead active robot alive only to preserve a raw pointer; the
     /// win/lose accounting in `GetGameStatus` treats it as dead either
-    /// way). PlayDestroySound is an M10 hook; the destroy effect is M9.
+    /// way).
     fn remove_destroyed_robots(&mut self) {
         let dead: Vec<RobotId> = self
             .robots
@@ -663,10 +660,8 @@ impl World {
             }
         }
 
-        // GetTransferRobot (`cCenter.cpp:108-128`).
-        // GUARD (design §1.3): the original could deref end()/begin() on an
-        // empty map here — the port resolves through the map and yields
-        // `None`, same observable outcome.
+        // GetTransferRobot (`cCenter.cpp:108-128`). GUARD: the original could
+        // deref end() on an empty map; resolving through the map yields `None`.
         let rid = if self.centers[i].transferring {
             match self.centers[i].transfer_robot {
                 Some(rid) if self.robots.contains_key(&rid) => Some(rid),
@@ -684,8 +679,8 @@ impl World {
             None => return,
         };
 
-        // Per-kind transfer.
-        match self.centers[i].kind.clone() {
+        let center = &mut self.centers[i];
+        match &center.kind {
             CenterKind::Energy { rate } => {
                 if let Some(r) = self.robots.get_mut(&rid) {
                     r.increase_energy(dt / rate);
@@ -708,19 +703,12 @@ impl World {
                 };
 
                 let mut te = dt;
-                if self.centers[i].last_transfer_robot == Some(rid)
-                    && self.centers[i].last_transfer_type == Some(ty)
-                {
-                    te += self.centers[i].time_left;
+                if center.last_transfer_robot == Some(rid) && center.last_transfer_type == Some(ty) {
+                    te += center.time_left;
                 }
 
-                // PARITY (design §1.3): a projectile type with no listed
-                // rate transfers at rate 0.0 => `te / 0.0 = +inf`; the
-                // `(UINT)` truncation is reproduced with `.floor()` on a
-                // NON-negative value, and the +inf flows through unguarded
-                // (`increase_ammo`'s `f_min(left + inf, start) == start`
-                // fills the magazine). NO guard code (a "guard to
-                // f32::INFINITY" would be a no-op).
+                // PARITY: an unlisted type transfers at rate 0.0, so `te / 0.0`
+                // is +inf and `increase_ammo` fills the magazine; no guard.
                 let rate = rates
                     .iter()
                     .find(|(t, _)| *t == ty)
@@ -731,9 +719,9 @@ impl World {
                     r.increase_ammo(ty, count);
                 }
 
-                self.centers[i].last_transfer_robot = Some(rid);
-                self.centers[i].last_transfer_type = Some(ty);
-                self.centers[i].time_left = te - count * rate;
+                center.last_transfer_robot = Some(rid);
+                center.last_transfer_type = Some(ty);
+                center.time_left = te - count * rate;
             }
         }
     }
@@ -805,16 +793,16 @@ impl World {
         if self.spawn_info[team].finished_spawning {
             return;
         }
-        let groups = self.game_definition().teams[team].robot_groups.clone();
-        if groups.is_empty() {
+        let n_groups = self.game_definition().teams[team].robot_groups.len();
+        if n_groups == 0 {
             self.spawn_info[team].finished_spawning = true;
             return;
         }
 
         let mut info = self.spawn_info[team].clone();
-        let mut group = groups[info.current_group].clone();
+        let mut group = self.robot_group(team, info.current_group);
 
-        if info.robots_left == 0 && info.current_group == groups.len() - 1 {
+        if info.robots_left == 0 && info.current_group == n_groups - 1 {
             info.finished_spawning = true;
         }
         if info.finished_spawning {
@@ -850,24 +838,28 @@ impl World {
             robot.ai = Some(AiRuntime::new(&mut robot, ai_options, &mut self.rng));
             self.robots.insert(id, robot);
 
-            info.next_spawn += self.rand_variance(group.spawn_delay, group.spawn_delay_variance);
+            info.next_spawn += self.rng.rand_variance(group.spawn_delay, group.spawn_delay_variance);
             info.robots_left -= 1;
             if info.robots_left == 0 {
-                if info.current_group == groups.len() - 1 {
+                if info.current_group == n_groups - 1 {
                     info.finished_spawning = true;
                     self.spawn_info[team] = info;
                     return;
                 } else {
                     info.current_group += 1;
-                    group = groups[info.current_group].clone();
+                    group = self.robot_group(team, info.current_group);
                     info.robots_left = group.count;
                     info.next_spawn +=
-                        self.rand_variance(group.initial_delay, group.initial_delay_variance);
+                        self.rng.rand_variance(group.initial_delay, group.initial_delay_variance);
                 }
             }
         }
 
         self.spawn_info[team] = info;
+    }
+
+    fn robot_group(&self, team: usize, group: usize) -> crate::data::RobotGroup {
+        self.game_definition().teams[team].robot_groups[group].clone()
     }
 
     /// PARITY: `cOperationPurge::GetRectPosition` (`cOperationPurge.cpp:2347-2369`)
@@ -1056,18 +1048,10 @@ impl World {
         (pos, slot.orientation)
     }
 
-    /// PARITY: `fRandVariance` (`Functions.cpp:96-99`) — `median + rand01 *
-    /// variance*2 - variance`. Deviation: the original divides `rand()` by
-    /// `RAND_MAX` (inclusive of 1.0); the port's `frand()` is `[0,1)` (design
-    /// §1.5.11 — no msvcrt bit-compat claimed, only the same coarseness).
-    fn rand_variance(&mut self, median: f32, variance: f32) -> f32 {
-        median + self.rng.frand() * variance * 2.0 - variance
-    }
-
     /// A uniform integer pick in `[0, n)`, replacing the original's
     /// `rand() % n` (`cOperationPurge.cpp:2422,2441`). Deviation: uses the
-    /// shared `frand()` facade (deterministic; no msvcrt bit-compat,
-    /// design §1.5.11). `n` must be nonzero.
+    /// shared `frand()` facade (deterministic; no msvcrt bit-compat).
+    /// `n` must be nonzero.
     fn rand_index(&mut self, n: usize) -> usize {
         ((self.rng.frand() * n as f32) as usize).min(n - 1)
     }

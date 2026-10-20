@@ -1,4 +1,4 @@
-//! `.maz` binary maze format (design §4.2; libs-map §3, the authoritative
+//! `.maz` binary maze format (the authoritative
 //! spec, verified against `cMaze.cpp:179-229`).
 //!
 //! Byte layout: 8-byte header = Win32 `SIZE` (i32 LE `cx`, i32 LE `cy`),
@@ -6,7 +6,7 @@
 //! Region 1 (`[0, cx*(cy+1))`) = X-direction (horizontal) walls, `i = Y*cx
 //! + X` = top edge of room `(X,Y)`. Region 2 (base `cx*(cy+1)`) =
 //! Y-direction (vertical) walls, `i = base + Y*(cx+1) + X` = left edge of
-//! room `(X,Y)`. Full codec + goldens land at M1.
+//! room `(X,Y)`.
 
 pub mod building;
 pub mod search;
@@ -15,7 +15,7 @@ use crate::error::MazeError;
 use std::io::{Read, Write};
 use std::path::Path;
 
-/// GUARD (design §1.3): the original does zero header validation — a
+/// GUARD: the original does zero header validation — a
 /// signed `cx`/`cy` pair goes straight into an allocation size. The port
 /// rejects hostile headers outside this range.
 pub const MAX_DIM: i32 = 4096;
@@ -59,8 +59,7 @@ impl Maze {
 
     /// Reads and validates a `.maz` file. GUARD: `1 <= cx, cy <= 4096` and
     /// exact file length; short reads are a clean `MazeError`, never a
-    /// crash (mirrors `cFile::Read`'s exact-byte-count-or-throw semantics,
-    /// libs-map §1.3).
+    /// crash (mirrors `cFile::Read`'s exact-byte-count-or-throw semantics).
     ///
     /// PARITY: `cMaze::OpenMaze` (`cMaze.cpp:179-204`) reads the 8-byte
     /// `SIZE` header, then reads the wall bitset one BYTE at a time (not
@@ -81,7 +80,7 @@ impl Maze {
         let cx = i32::from_le_bytes([header[0], header[1], header[2], header[3]]);
         let cy = i32::from_le_bytes([header[4], header[5], header[6], header[7]]);
 
-        // GUARD (design §1.3, libs-map §3 "Validation gotchas"): the
+        // GUARD: the
         // original feeds a signed cx/cy straight into an allocation size
         // with zero validation. Reject hostile headers before allocating.
         if cx < 1 || cy < 1 || cx > MAX_DIM || cy > MAX_DIM {
@@ -114,7 +113,7 @@ impl Maze {
 
         // Unpack LSB-first, byte by byte (cMaze.cpp:189-203). The final
         // byte's padding bits (beyond N) are masked/ignored — pre-2011
-        // files may carry garbage there (libs-map §3 "Bit packing").
+        // files may carry garbage there.
         let mut all_walls = vec![false; n as usize];
         for (wall_idx, wall) in all_walls.iter_mut().enumerate() {
             let byte = rest[wall_idx / 8];
@@ -184,7 +183,7 @@ impl Maze {
     }
 
     /// `h_walls[y*cx + x]` accessor with GUARD out-of-grid = no wall
-    /// (design §1.3; open-edge mazes stay legal).
+    /// (open-edge mazes stay legal).
     fn h_wall(&self, x: i32, y: i32) -> bool {
         if x < 0 || y < 0 || x >= self.cx || y > self.cy {
             return false;
@@ -204,7 +203,7 @@ impl Maze {
     /// `h(x,y)`, bottom = `h(x,y+1)`, left = `v(x,y)`, right =
     /// `v(x+1,y)`. Returns `[top, bottom, left, right]`.
     ///
-    /// GUARD (design §1.3): out-of-grid queries return "no wall" rather
+    /// GUARD: out-of-grid queries return "no wall" rather
     /// than the original's unchecked array read/log-and-return-`m_aWalls[0]`
     /// (`cMaze::GetWallReference`, `cMaze.cpp:286-301`) — this matches what
     /// the non-crashing in-range C++ reads effectively did, so open-edge
@@ -224,8 +223,7 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    /// The synthesized 10-byte 2x2 golden (design §6, libs-map §3 "Worked
-    /// example"): `02 00 00 00 02 00 00 00 73 0B`.
+    /// The synthesized 10-byte 2x2 golden: `02 00 00 00 02 00 00 00 73 0B`.
     const GOLDEN_2X2: [u8; 10] = [0x02, 0, 0, 0, 0x02, 0, 0, 0, 0x73, 0x0B];
 
     fn write_temp(bytes: &[u8]) -> std::path::PathBuf {
@@ -256,8 +254,7 @@ mod tests {
 
         assert_eq!(maze.cx, 2);
         assert_eq!(maze.cy, 2);
-        // X-walls set: 0,1 (top row), 4,5 (bottom row) — libs-map §3
-        // worked example.
+        // X-walls set: 0,1 (top row), 4,5 (bottom row).
         assert_eq!(maze.h_walls, vec![true, true, false, false, true, true]);
         // Y-walls (offset 6) set: 6,8,9,11 -> local indices 0,2,3,5 within
         // the 6-entry v_walls array (base subtracted).
@@ -327,8 +324,7 @@ mod tests {
     fn padding_bits_in_final_byte_are_masked_and_ignored() {
         // Same golden maze, but with garbage set in the final byte's
         // unused high bits (N=12 -> only bits 0-3 of byte 1 are real;
-        // bits 4-7 are padding). libs-map §3: "readers must mask/ignore
-        // them".
+        // bits 4-7 are padding), which readers must ignore.
         let mut bytes = GOLDEN_2X2;
         bytes[9] |= 0b1111_0000;
         let path = write_temp(&bytes);
@@ -399,7 +395,7 @@ mod tests {
             (cx, cy, mut h_walls, mut v_walls) in arb_maze()
         ) {
             // Force every border wall bit false: a maze with no outer
-            // border is legal (libs-map §3 "Validation gotchas").
+            // border is legal.
             for x in 0..cx {
                 h_walls[x as usize] = false; // top row
                 h_walls[(cy as usize) * cx as usize + x as usize] = false; // bottom row

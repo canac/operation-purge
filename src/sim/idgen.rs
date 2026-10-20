@@ -1,14 +1,10 @@
-//! `cIDGenerator`: binary-subdivision ID sequence for robots/centers
-//! (source-map §3.7, §8.10), ported verbatim from `cIDGenerator.h/.cpp`.
+//! `cIDGenerator`: binary-subdivision ID sequence for robots/centers,
+//! ported verbatim from `cIDGenerator.h/.cpp`.
 //!
-//! PARITY: the constructor's `nBits` parameter is a no-op bug —
-//! `cIDGenerator.cpp:5` initializes `m_nBits` from a ternary whose *both*
-//! branches evaluate to `sizeof(DWORD)*8` (32), so the passed-in argument
-//! is silently ignored and `m_nBits` is unconditionally 32. Kept verbatim
-//! (not "fixed" to actually honor the argument) because the resulting
-//! 32-level ID sequence is observable: it's the iteration order
-//! `BTreeMap<RobotId, Robot>` must provably match `std::map<tRobotID,
-//! cAIRobot*>` over (design §5.1).
+//! PARITY: `cIDGenerator.cpp:5` initializes `m_nBits` from a ternary whose
+//! *both* branches evaluate to 32, so the sequence is always 32 levels
+//! deep. It is observable: it's the iteration order `BTreeMap<RobotId,
+//! Robot>` must match `std::map<tRobotID, cAIRobot*>` over.
 //!
 //! The sequence is a bit-reversal (Van der Corput) counter: the n-th
 //! (0-indexed) value equals `(n+1)` with its 32 bits reversed. That closed
@@ -25,12 +21,9 @@ pub struct IdGenerator {
 }
 
 impl IdGenerator {
-    /// PARITY: the original constructor's `nBits` argument is ignored
-    /// (source-map §8.10, `cIDGenerator.cpp:5`) — the port keeps the same
-    /// no-op parameter so call sites read identically, but the behavior
-    /// does not depend on it (always starts at `level=0, node=0` with an
-    /// effective bit width of [`N_BITS`]).
-    pub fn new(_n_bits: u32) -> Self {
+    /// Starts the sequence at `level=0, node=0`. The original ctor's `nBits`
+    /// argument had no effect (`cIDGenerator.cpp:5`), so it is not ported.
+    pub fn new() -> Self {
         Self { node: 0, level: 0 }
     }
 
@@ -80,7 +73,7 @@ impl IdGenerator {
 
 impl Default for IdGenerator {
     fn default() -> Self {
-        Self::new(N_BITS)
+        Self::new()
     }
 }
 
@@ -115,7 +108,7 @@ mod tests {
 
     #[test]
     fn first_64_ids_are_pinned_and_match_the_closed_form() {
-        let mut gen = IdGenerator::new(N_BITS);
+        let mut gen = IdGenerator::new();
         for n in 0..64u32 {
             let id = gen.next();
             assert_eq!(
@@ -132,7 +125,7 @@ mod tests {
         // level 0 (1 node):     0x80000000
         // level 1 (2 nodes):    0x40000000, 0xC0000000
         // level 2 (4 nodes):    0x20000000, 0x60000000, 0xA0000000, 0xE0000000
-        let mut gen = IdGenerator::new(N_BITS);
+        let mut gen = IdGenerator::new();
         let expected: [u32; 7] = [
             0x8000_0000,
             0x4000_0000,
@@ -148,21 +141,8 @@ mod tests {
     }
 
     #[test]
-    fn ctor_n_bits_argument_is_ignored() {
-        // PARITY: any nBits argument must produce the identical sequence.
-        let mut a = IdGenerator::new(8);
-        let mut b = IdGenerator::new(32);
-        let mut c = IdGenerator::new(0);
-        for _ in 0..64 {
-            let (va, vb, vc) = (a.next(), b.next(), c.next());
-            assert_eq!(va, vb);
-            assert_eq!(vb, vc);
-        }
-    }
-
-    #[test]
     fn reset_restarts_the_sequence() {
-        let mut gen = IdGenerator::new(N_BITS);
+        let mut gen = IdGenerator::new();
         let first_id = gen.next();
         gen.next();
         gen.next();
@@ -170,15 +150,15 @@ mod tests {
         assert_eq!(gen.next(), first_id);
     }
 
-    /// design §6 / §7 M2: "BTreeMap<RobotId, _> iteration over them equals
-    /// ascending std::map order" — a `BTreeMap`/`std::map` always iterates
+    /// "BTreeMap<RobotId, _> iteration over them equals ascending std::map
+    /// order" — a `BTreeMap`/`std::map` always iterates
     /// in ascending key order regardless of insertion order, so inserting
     /// the generator's (unsorted-looking) sequence and reading it back
     /// must come out numerically sorted, exactly like the original's
     /// `std::map<tRobotID, cAIRobot*>`.
     #[test]
     fn btreemap_over_the_generated_ids_iterates_in_ascending_order() {
-        let mut gen = IdGenerator::new(N_BITS);
+        let mut gen = IdGenerator::new();
         let mut map: BTreeMap<RobotId, u32> = BTreeMap::new();
         let mut generated = Vec::new();
         for i in 0..64u32 {

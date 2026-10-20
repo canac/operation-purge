@@ -1,5 +1,4 @@
-//! M9 particle-effect wiring tests (design §6, §7 M9): the three-tier
-//! system's integration into `World::frame` — effects must spawn on the
+//! Particle-effect wiring tests: the three-tier system's integration into `World::frame` — effects must spawn on the
 //! projectile fire/travel/collision and robot-destroy events, feeding the
 //! shared particle arena. (The per-class unit tests — degenerate-case
 //! quaternion, replace-oldest arena, fEmitRate-as-delay, sub-frame
@@ -63,7 +62,7 @@ fn group(robot_type: u32, ai_type: u32, count: u32) -> RobotGroup {
 fn single_team_world(robot_type: u32, count: u32, cx: i32, cy: i32, seed: u64) -> World {
     let color = load_data().game_definitions[0].teams[0].color;
     let def = GameDefinition {
-        name: "M9".into(),
+        name: "Particles".into(),
         teams: vec![TeamDefinition {
             name: "A".into(),
             color,
@@ -149,7 +148,6 @@ fn projectile_travel_effect_is_dynamic_and_drives_a_trail() {
     let mut rng = GameRng::from_seed(11);
     let mut proj = Projectile::new(
         ProjectileTypeId(1),
-        None,
         start,
         0.0,
         0.0, // theta: along +X

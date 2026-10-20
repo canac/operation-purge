@@ -1,6 +1,6 @@
 //! Spawn scheduling data: per-team `tSpawnInfo` timing state and the pool
-//! of candidate center positions (`cOperationPurge.cpp` sim half,
-//! source-map §3.4, §7). The scheduling *orchestration* (which advances
+//! of candidate center positions (`cOperationPurge.cpp` sim half).
+//! The scheduling *orchestration* (which advances
 //! these, samples placements, and inserts robots/centers) lives in
 //! `sim::world` because it needs the robot/center maps + RNG.
 //!
