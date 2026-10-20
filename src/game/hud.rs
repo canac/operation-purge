@@ -89,7 +89,7 @@ pub struct HudSnapshot {
 
 /// The active robot's status block (`cRobot::GetInfoString`,
 /// `cRobot.cpp:654-668`). Returns `""` when no robot is being observed.
-fn robot_info(robot: &Option<RobotHudSnapshot>) -> String {
+pub fn robot_info(robot: &Option<RobotHudSnapshot>) -> String {
     let Some(r) = robot else {
         return String::new();
     };

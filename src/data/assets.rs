@@ -42,6 +42,21 @@ pub mod names {
     pub const ROCKET_COLLISION_SOUND: &str = "RocketCollision.wav";
     pub const DESTROY_SOUND: &str = "Destroy.wav";
 
+    /// The projectile sprite for a projectile type index (Bullet, Rocket,
+    /// Better Bullet); `None` = not drawn (`cProjectile::Render`).
+    pub fn projectile_texture(type_index: usize) -> Option<&'static str> {
+        (type_index != 1).then_some(PROJECTILE_TEXTURE)
+    }
+
+    /// `(fire, collision)` sounds for a projectile type index.
+    pub fn projectile_sounds(type_index: usize) -> (&'static str, &'static str) {
+        if type_index == 1 {
+            (ROCKET_FIRE_SOUND, ROCKET_COLLISION_SOUND)
+        } else {
+            (BULLET_FIRE_SOUND, BULLET_COLLISION_SOUND)
+        }
+    }
+
     /// Every sound the game plays — the app preloads exactly this set once
     /// at startup (alarms first, so their `ClipId`s are 0 and 1).
     pub const ALL_SOUNDS: &[&str] = &[

@@ -261,9 +261,22 @@ fn hud_snapshot_has_no_robot_block_before_possession() {
     // active robot ⇒ the robot block is empty.
     let snap = g.hud_snapshot();
     assert!(snap.robot.is_none());
-    let text = g.status_text();
+    let text = operation_purge::game::hud::status_text(&snap);
     assert!(!text.contains("Speed:"));
     assert!(text.starts_with("Spawned robots:"));
+    // On the 2D map the HUD shows only the robot under the mouse.
+    assert!(g.status_text().is_empty());
+}
+
+#[test]
+fn map_hud_shows_the_hovered_robots_stats() {
+    let mut g = game();
+    let id = friendly_robot(&g);
+    let pos = g.world.robots[&id].position;
+    g.cursor_win = g.log_to_win(pos);
+    let text = g.status_text();
+    assert!(text.starts_with("Speed:"));
+    assert!(!text.contains("Spawned robots:"));
 }
 
 #[test]
@@ -274,7 +287,7 @@ fn hud_ai_mode_line_appears_when_observing_an_ai_robot() {
     g.active_robot = Some(friendly_robot(&g));
     let snap = g.hud_snapshot();
     assert!(snap.ai_mode);
-    assert!(g.status_text().contains("You are in AI mode"));
+    assert!(operation_purge::game::hud::status_text(&snap).contains("You are in AI mode"));
 }
 
 // ============================ M11 — full flow ============================

@@ -119,6 +119,24 @@ pub struct World {
     /// [`set_audio_listener`](Self::set_audio_listener). PARITY:
     /// `ListenerData` in `cOperationPurge.cpp:1276-1291`.
     pub audio_listener: crate::audio::spatial::AudioListener,
+    /// One-shot 3D sounds raised this frame (`Play3DSound` call sites);
+    /// drained by the app's audio pass.
+    pub sound_events: Vec<SoundEvent>,
+}
+
+/// Which per-event sound to play (`PlayFireSound` / `PlayCollisionSound` /
+/// `PlayDestroySound`).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum SoundKind {
+    Fire(crate::ids::ProjectileTypeId),
+    Collision(crate::ids::ProjectileTypeId),
+    Destroy,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SoundEvent {
+    pub kind: SoundKind,
+    pub origin: Vec3,
 }
 
 impl World {
@@ -157,6 +175,7 @@ impl World {
             rng: GameRng::from_seed(seed),
             inputs: BTreeMap::new(),
             game_time: 0.0,
+            sound_events: Vec::new(),
             spawn_info: Vec::new(),
             center_positions: Vec::new(),
             enemy_visible_throttle: 0.0,
@@ -183,6 +202,7 @@ impl World {
         self.centers.clear();
         self.effects.clear();
         self.holes = HoleFifo::new();
+        self.sound_events.clear();
         self.inputs.clear();
         self.spawn_info.clear();
         self.center_positions.clear();
@@ -431,6 +451,10 @@ impl World {
                 &mut self.rng,
             ));
         }
+        self.sound_events.push(SoundEvent {
+            kind: SoundKind::Fire(projectile_type),
+            origin: proj.position,
+        });
         self.projectiles.push(proj);
     }
 
@@ -549,6 +573,12 @@ impl World {
                 proj.trajectory.gravity,
             );
             let impact_vel = proj.velocity;
+            if collision.kind != CollisionKind::None {
+                self.sound_events.push(SoundEvent {
+                    kind: SoundKind::Collision(proj.projectile_type),
+                    origin: proj.position,
+                });
+            }
             match collision.kind {
                 CollisionKind::None => survivors.push(proj),
                 CollisionKind::Robot => {
@@ -565,7 +595,16 @@ impl World {
                 CollisionKind::Wall => {
                     // DisplayHole (`cProjectile.cpp:237-300`).
                     if let Some((position, normal)) = proj.hole_placement() {
-                        self.holes.push(Hole { position, normal });
+                        let size = self.game_data.projectile_types
+                            [proj.projectile_type.get() as usize]
+                            .hole_size;
+                        let rotation = self.rng.frand() * crate::render::d3dx::D3DX_PI * 2.0;
+                        self.holes.push(Hole {
+                            position,
+                            normal,
+                            rotation,
+                            size,
+                        });
                     }
                     // M9: collision burst; the projectile is destroyed.
                     self.spawn_burst_effect(collision_effect, impact, impact_vel);
@@ -598,6 +637,10 @@ impl World {
         let mut bursts: Vec<(EffectDefId, Vec3, Vec3)> = Vec::new();
         for r in self.robots.values() {
             if r.is_dead() {
+                self.sound_events.push(SoundEvent {
+                    kind: SoundKind::Destroy,
+                    origin: Vec3::new(r.position.x, r.position.y, 0.0),
+                });
                 if let Some(def) =
                     self.game_data.robot_types[r.robot_type.get() as usize].destroy_effect
                 {

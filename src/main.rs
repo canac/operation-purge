@@ -8,8 +8,12 @@ use operation_purge::app::config::Config;
 struct Args {
     assets_dir: Option<String>,
     seed: Option<u64>,
-    /// Hidden flag: drives deterministic headless tests only (design §5.1).
+    /// Hidden flag: fixed per-frame dt for deterministic runs (design §5.1).
     fixed_dt: Option<f32>,
+    /// Hidden flags: scripted E2E run (see `app::e2e`).
+    e2e: Option<String>,
+    e2e_out: Option<String>,
+    window: Option<(u32, u32)>,
 }
 
 fn parse_args() -> anyhow::Result<Args> {
@@ -17,6 +21,9 @@ fn parse_args() -> anyhow::Result<Args> {
         assets_dir: None,
         seed: None,
         fixed_dt: None,
+        e2e: None,
+        e2e_out: None,
+        window: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -42,6 +49,22 @@ fn parse_args() -> anyhow::Result<Args> {
                 args.fixed_dt = Some(raw.parse().map_err(|e| {
                     anyhow::anyhow!("--fixed-dt value `{raw}` is not a valid f32: {e}")
                 })?);
+            }
+            "--e2e" => {
+                args.e2e = Some(it.next().ok_or_else(|| anyhow::anyhow!("--e2e requires a script path"))?);
+            }
+            "--e2e-out" => {
+                args.e2e_out = Some(it.next().ok_or_else(|| anyhow::anyhow!("--e2e-out requires a dir"))?);
+            }
+            "--window" => {
+                let raw = it
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("--window requires WxH"))?;
+                let (w, h) = raw
+                    .split_once('x')
+                    .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+                    .ok_or_else(|| anyhow::anyhow!("--window value `{raw}` is not WxH"))?;
+                args.window = Some((w, h));
             }
             other => {
                 anyhow::bail!("unrecognized argument: {other}");
@@ -69,10 +92,19 @@ fn main() -> anyhow::Result<()> {
         config.assets_dir, config.vsync, config.seed, args.fixed_dt
     );
 
-    // M3: open the window, create the GL context, and run the input/text
-    // shell (borderless fullscreen; Esc quits). See RUN.md for what to
-    // eyeball. `--fixed-dt` is a headless-test-only flag and does not drive
-    // this interactive path.
-    operation_purge::app::run(config)?;
+    let mut opts = operation_purge::app::RunOptions {
+        fixed_dt: args.fixed_dt,
+        windowed: args.window,
+        ..Default::default()
+    };
+    if let Some(script) = args.e2e {
+        let out = std::path::PathBuf::from(args.e2e_out.unwrap_or_else(|| "e2e-out".into()));
+        let driver = operation_purge::app::e2e::Driver::load(std::path::Path::new(&script), out)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        opts.e2e = Some(driver);
+        opts.fixed_dt = opts.fixed_dt.or(Some(1.0 / 60.0));
+        opts.windowed = opts.windowed.or(Some((1280, 800)));
+    }
+    operation_purge::app::run(config, opts)?;
     Ok(())
 }

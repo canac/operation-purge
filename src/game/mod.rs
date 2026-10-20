@@ -27,6 +27,7 @@ use crate::math::intersect::MovingRect;
 use crate::path::RoomGraph;
 use crate::render::camera::FreeFlyCamera;
 use crate::render::d3dx::D3DX_PI;
+use crate::render::overlay::{MAP_VIEWPORT_OFFSET, MAP_VIEWPORT_SIZE};
 use crate::sim::robot::{Throttle, ROBOT_SIZE_XY, ROBOT_SIZE_Z};
 use crate::sim::world::{RobotInput, Status, World};
 
@@ -42,6 +43,10 @@ pub const INITIAL_GAME_SPEED: f32 = 0.0;
 /// PARITY: the enemy-visible HUD/alarm poll runs every 0.25 s of *game* time
 /// (`cOperationPurge.cpp:586`, design §5.3).
 pub const ENEMY_VISIBLE_POLL_SECONDS: f32 = 0.25;
+
+/// PARITY: `MIN_VISIBLE_SIZE` — the smallest 2D-map window, in rooms
+/// (`cOperationPurge.cpp:15`).
+pub const MIN_VISIBLE_SIZE: f32 = 1.0;
 
 /// PARITY: `cOperationPurge::eObserverType` — which vantage the 3D camera +
 /// HUD use. `Robot` = the player controls a friendly robot; `AiRobot` = the
@@ -97,10 +102,16 @@ pub struct Game {
     /// design §5.1; `cOperationPurge.cpp:584`).
     pub enemy_visible_last_time: f32,
 
-    /// The 2D-map cursor position in world coordinates (`WinToLog` of the
-    /// mouse), pushed by the app before [`execute_commands`](Self::execute_commands)
-    /// so robot selection can pick under it. Neutral (origin) headless.
-    pub cursor_world: Vec2,
+    /// The mouse position as a window fraction (`cMainWindow::GetMousePosition`,
+    /// `(0,0)` top-left .. `(1,1)`), pushed by the app before
+    /// [`execute_commands`](Self::execute_commands); mapped through
+    /// [`win_to_log`](Self::win_to_log) for 2D picking.
+    pub cursor_win: Vec2,
+
+    /// `m_pt2Building2DCenter` / `m_size2Building2D`: the visible 2D-map
+    /// window, in room units.
+    pub map_center: Vec2,
+    pub map_size: Vec2,
 
     /// The player's control for the possessed robot this frame, built in
     /// `execute_commands` and consumed by `advance` (so it survives the
@@ -136,16 +147,99 @@ impl Game {
             observer_theta: 0.0,
             observer_phi: 0.0,
             cheats_enabled: false,
-            show_map: false,
+            show_map: true,
             enemy_visible: false,
             targeted: false,
             above_center: false,
             enemy_visible_last_time: 0.0,
-            cursor_world: Vec2::ZERO,
+            cursor_win: Vec2::ZERO,
+            map_center: Vec2::ZERO,
+            map_size: Vec2::ZERO,
             player_input: None,
             ignore_game_end: false,
             confirm_return: None,
-        })
+        }
+        .with_full_map_view())
+    }
+
+    /// PARITY: `SetGameParams` shows the whole building (`cOperationPurge.cpp:144-147`).
+    fn with_full_map_view(mut self) -> Self {
+        self.reset_map_view();
+        self
+    }
+
+    fn reset_map_view(&mut self) {
+        let rect = self.building_rect();
+        self.map_center = rect * 0.5;
+        self.map_size = rect;
+    }
+
+    /// `GetBuildingRect` — the maze size in rooms.
+    fn building_rect(&self) -> Vec2 {
+        let maze = &self.world.building.maze;
+        Vec2::new(maze.cx as f32, maze.cy as f32)
+    }
+
+    /// PARITY: the view-window update at the top of `Render2D`
+    /// (`cOperationPurge.cpp:2714-2731`): in 3D, follow the active robot or
+    /// observer; then clamp size to `[1, rect]` and the center inside the rect.
+    pub fn update_map_view(&mut self) {
+        let room = self.world.building.room_size;
+        if !self.in_2d() {
+            if let Some(r) = self.active_robot.and_then(|id| self.world.robots.get(&id)) {
+                self.map_center = r.position / room;
+            } else if self.observer_type == ObserverType::Point {
+                self.map_center = Vec2::new(self.observer_point.x, self.observer_point.y) / room;
+            }
+        }
+        let rect = self.building_rect();
+        // `fClamp`: no panic on lo > hi, unlike `f32::clamp`.
+        let clamp = |v: f32, lo: f32, hi: f32| {
+            if v < lo {
+                lo
+            } else if v > hi {
+                hi
+            } else {
+                v
+            }
+        };
+        self.map_size.x = clamp(self.map_size.x, MIN_VISIBLE_SIZE, rect.x);
+        self.map_size.y = clamp(self.map_size.y, MIN_VISIBLE_SIZE, rect.y);
+        let half = self.map_size * 0.5;
+        self.map_center.x = clamp(self.map_center.x, half.x, rect.x - half.x);
+        self.map_center.y = clamp(self.map_center.y, half.y, rect.y - half.y);
+    }
+
+    /// Top-left of the visible map window, in room units.
+    pub fn map_visible_offset(&self) -> Vec2 {
+        self.map_center - self.map_size * 0.5
+    }
+
+    /// PARITY: `cOperationPurge::WinToLog` (`cOperationPurge.cpp:3148-3163`) —
+    /// a window fraction to world coordinates on the full-screen 2D map.
+    pub fn win_to_log(&self, win: Vec2) -> Vec2 {
+        let size = self.world.building.size();
+        let room = self.world.building.room_size;
+        let rect = self.building_rect();
+        let mut log = Vec2::new(
+            (win.x - MAP_VIEWPORT_OFFSET) * size.x / MAP_VIEWPORT_SIZE,
+            (win.y - MAP_VIEWPORT_OFFSET) * size.y / MAP_VIEWPORT_SIZE,
+        );
+        log *= self.map_size / rect;
+        log + self.map_visible_offset() * room
+    }
+
+    /// Inverse of [`win_to_log`](Self::win_to_log): where a world point sits
+    /// on the full-screen 2D map, as a window fraction.
+    pub fn log_to_win(&self, log: Vec2) -> Vec2 {
+        let size = self.world.building.size();
+        let room = self.world.building.room_size;
+        let rect = self.building_rect();
+        let local = (log - self.map_visible_offset() * room) / (self.map_size / rect);
+        Vec2::new(
+            local.x * MAP_VIEWPORT_SIZE / size.x + MAP_VIEWPORT_OFFSET,
+            local.y * MAP_VIEWPORT_SIZE / size.y + MAP_VIEWPORT_OFFSET,
+        )
     }
 
     // ============================ queries ============================
@@ -361,6 +455,7 @@ impl Game {
         self.targeted = false;
         self.above_center = false;
         self.enemy_visible_last_time = 0.0;
+        self.reset_map_view();
         // Enter2DMode(true) — forced (no active robot to return to).
         self.screen = Screen::Map2D {
             forced_by_death: true,
@@ -413,21 +508,51 @@ impl Game {
             return;
         }
 
+        // Resize the 2D map window, in both modes (`cOperationPurge.cpp:922-940`).
+        let resize = self.world.game_data.ui.resize_building_rate * real_dt;
+        if self.cmd_down(Command::IncreaseBuildingWidth, input) {
+            self.map_size.x += resize;
+        }
+        if self.cmd_down(Command::IncreaseBuildingHeight, input) {
+            self.map_size.y += resize;
+        }
+        if self.cmd_down(Command::DecreaseBuildingWidth, input) {
+            self.map_size.x -= resize;
+        }
+        if self.cmd_down(Command::DecreaseBuildingHeight, input) {
+            self.map_size.y -= resize;
+        }
+
         if self.in_2d() {
             // These commands can only run in 2D mode (`cOperationPurge.cpp:956-1058`).
+            let mouse = self.win_to_log(self.cursor_win);
             if self.cmd_pressed(Command::SelectObserverRobot, input) {
-                if let Some(id) = self.robot_under_point(self.cursor_world) {
+                if let Some(id) = self.robot_under_point(mouse) {
                     self.select_robot(id);
                 }
             }
             if self.cmd_pressed(Command::SelectObserverPosition, input) {
-                self.select_observer_point(self.cursor_world);
+                self.select_observer_point(mouse);
             }
             if self.cmd_pressed(Command::SetObserver, input) {
                 self.set_observer();
             }
             if self.cmd_pressed(Command::Exit2DMode, input) {
                 self.cancel_2d();
+            }
+            // Pan the 2D map window (`cOperationPurge.cpp:1037-1054`).
+            let pan = self.world.game_data.ui.move_building_rate * real_dt;
+            if self.cmd_down(Command::MoveBuildingRight, input) {
+                self.map_center.x += pan;
+            }
+            if self.cmd_down(Command::MoveBuildingDown, input) {
+                self.map_center.y += pan;
+            }
+            if self.cmd_down(Command::MoveBuildingLeft, input) {
+                self.map_center.x -= pan;
+            }
+            if self.cmd_down(Command::MoveBuildingUp, input) {
+                self.map_center.y -= pan;
             }
             // 2D commands processed; do not fall through to 3D (`:1058`).
             return;
@@ -772,7 +897,10 @@ impl Game {
         if self.observer_type == ObserverType::Point {
             return None;
         }
-        let id = self.active_robot?;
+        self.robot_hud(self.active_robot?)
+    }
+
+    fn robot_hud(&self, id: RobotId) -> Option<RobotHudSnapshot> {
         let r = self.world.robots.get(&id)?;
         let def = &self.world.game_data.game_definitions[self.world.game_def.get() as usize];
         let rt = &self.world.game_data.robot_types[r.robot_type.get() as usize];
@@ -846,7 +974,13 @@ impl Game {
     }
 
     /// The full status text (`GetInfoString`), assembled from the live poll.
+    /// The HUD text for the current mode (`Render2D`, `cOperationPurge.cpp:2837-2856`):
+    /// in 2D only the robot under the mouse, else the full status block.
     pub fn status_text(&self) -> String {
+        if self.in_2d() {
+            let hovered = self.robot_under_point(self.win_to_log(self.cursor_win));
+            return hud::robot_info(&hovered.and_then(|id| self.robot_hud(id)));
+        }
         hud::status_text(&self.hud_snapshot())
     }
 
@@ -1029,5 +1163,66 @@ mod tests {
         let t0 = g.world.game_time;
         g.advance(0.5);
         assert_eq!(g.world.game_time, t0);
+    }
+
+    #[test]
+    fn map_view_starts_on_the_whole_building() {
+        let g = game();
+        let maze = &g.world.building.maze;
+        let rect = Vec2::new(maze.cx as f32, maze.cy as f32);
+        assert_eq!(g.map_size, rect);
+        assert_eq!(g.map_center, rect * 0.5);
+        assert!(g.show_map);
+    }
+
+    #[test]
+    fn win_to_log_maps_the_map_corners_and_round_trips() {
+        let mut g = game();
+        let size = g.world.building.size();
+        let o = MAP_VIEWPORT_OFFSET;
+        let far = MAP_VIEWPORT_OFFSET + MAP_VIEWPORT_SIZE;
+        assert!(g.win_to_log(Vec2::splat(o)).length() < 1e-4);
+        assert!((g.win_to_log(Vec2::splat(far)) - Vec2::new(size.x, size.y)).length() < 1e-3);
+
+        g.map_size = Vec2::splat(2.0);
+        g.map_center = Vec2::new(3.0, 4.0);
+        g.update_map_view();
+        let p = Vec2::new(25.0, 37.0);
+        assert!((g.win_to_log(g.log_to_win(p)) - p).length() < 1e-3);
+    }
+
+    #[test]
+    fn map_view_clamps_size_and_center_inside_the_building() {
+        let mut g = game();
+        g.map_size = Vec2::new(0.1, 1000.0);
+        g.map_center = Vec2::new(-50.0, 50.0);
+        g.update_map_view();
+        let maze = &g.world.building.maze;
+        assert_eq!(g.map_size, Vec2::new(MIN_VISIBLE_SIZE, maze.cy as f32));
+        assert_eq!(g.map_center.x, MIN_VISIBLE_SIZE * 0.5);
+    }
+
+    #[test]
+    fn map_view_follows_the_active_robot_in_3d() {
+        let mut g = game();
+        let (id, pos) = g
+            .world
+            .robots
+            .iter()
+            .find(|(_, r)| r.team == g.world.active_team)
+            .map(|(id, r)| (*id, r.position))
+            .unwrap();
+        g.select_robot(id);
+        assert!(g.set_observer());
+        g.map_size = Vec2::splat(2.0);
+        g.update_map_view();
+        let room = g.world.building.room_size;
+        let expect = pos / room;
+        let maze = &g.world.building.maze;
+        let clamped = Vec2::new(
+            expect.x.clamp(1.0, maze.cx as f32 - 1.0),
+            expect.y.clamp(1.0, maze.cy as f32 - 1.0),
+        );
+        assert!((g.map_center - clamped).length() < 1e-4);
     }
 }

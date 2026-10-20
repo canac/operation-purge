@@ -233,10 +233,15 @@ impl Default for ParticleArena {
 
 // ============================ bullet holes ============================
 
-/// A bullet-hole decal.
+/// A bullet-hole decal (`tHole`, `cOperationPurge.cpp:1421-1436`).
 pub struct Hole {
     pub position: Vec3,
+    /// Outward wall normal (`OrientationAxis`).
     pub normal: Vec3,
+    /// `fRand () * 2π`, drawn when the hole is added.
+    pub rotation: f32,
+    /// The projectile type's `hole_size`.
+    pub size: f32,
 }
 
 /// 256-entry FIFO of wall decals (`s_MaximumHoles`).

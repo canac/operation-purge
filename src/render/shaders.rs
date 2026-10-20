@@ -60,7 +60,9 @@ void main() { frag = u_color; }
 /// - `N` is **NEVER normalized** (dome normals of length 0.08-0.5
 ///   intentionally dim the lighting — the 2011 look);
 /// - `att = 1/(a0 + a1*d + a2*d^2)`, coefficients from the `LIGHT_DATA` const;
-/// - `global_ambient = vec3(0x20/255)`; `mat_ambient = mat_diffuse = u_material`.
+/// - `global_ambient = vec3(0x20/255)`; `mat_ambient = mat_diffuse = u_material`;
+/// - the light's ambient is white too (`cOperationPurge.cpp:3095`), and D3D
+///   attenuates per-light ambient like diffuse.
 const LIT_GOURAUD: &str = r#"
 // PARITY: FFP Gouraud lighting, one white point light AT THE EYE.
 vec3 gouraud(vec3 pos, vec3 normal, vec3 material, vec3 atten) {
@@ -71,8 +73,8 @@ vec3 gouraud(vec3 pos, vec3 normal, vec3 material, vec3 atten) {
     float d = length(p_view.xyz);
     float att = 1.0 / (atten.x + atten.y * d + atten.z * d * d);
     float ndl = max(dot(n_view, L), 0.0);
-    vec3 ambient = material * vec3(0.12549020); // global ambient 0x202020
-    vec3 diffuse = material * ndl * att;         // white light diffuse = 1
+    vec3 ambient = material * (vec3(0.12549020) + att); // global 0x202020 + light ambient
+    vec3 diffuse = material * ndl * att;                 // white light diffuse = 1
     return clamp(ambient + diffuse, 0.0, 1.0);
 }
 "#;
@@ -297,6 +299,8 @@ mod tests {
         assert!(!LIT_GOURAUD.contains("normalize(n_view"));
         // Attenuation 1/(a0 + a1 d + a2 d^2).
         assert!(LIT_GOURAUD.contains("atten.x + atten.y * d + atten.z * d * d"));
+        // The light's white ambient is attenuated and added to the global ambient.
+        assert!(LIT_GOURAUD.contains("vec3(0.12549020) + att"));
     }
 
     #[test]

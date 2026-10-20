@@ -130,7 +130,7 @@ impl ConfirmKind {
 /// PARITY note: the live New Game screen is driven by `AppRunner.new_game:
 /// Option<NewGame>` (app/mod.rs), *not* a `Screen` variant — so `Screen` has
 /// no `NewGame` case.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Screen {
     Map2D { forced_by_death: bool },
     Play3D,

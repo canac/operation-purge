@@ -77,8 +77,11 @@ impl Default for Config {
 }
 
 impl Config {
-    /// `dirs::config_dir()/operation-purge/config.toml`.
+    /// `$OP_CONFIG` if set, else `dirs::config_dir()/operation-purge/config.toml`.
     pub fn path() -> Option<PathBuf> {
+        if let Some(p) = std::env::var_os("OP_CONFIG") {
+            return Some(PathBuf::from(p));
+        }
         dirs::config_dir().map(|d| d.join("operation-purge").join("config.toml"))
     }
 

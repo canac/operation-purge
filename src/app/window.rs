@@ -43,15 +43,26 @@ pub struct RenderWindow {
     /// DPI scale factor reported by the platform; HUD/text metrics are
     /// logical px × this factor.
     pub scale_factor: f64,
+    /// Whether the cursor is currently hidden + grabbed for 3D mouse-look.
+    pub cursor_captured: bool,
 }
 
 impl RenderWindow {
     /// Creates the borderless-fullscreen window + OpenGL 3.3 core context on
     /// the primary monitor. Runtime-only (needs a live event loop).
-    pub fn create(event_loop: &ActiveEventLoop, vsync: bool) -> Result<Self, GlError> {
-        let window_attributes = WindowAttributes::default()
-            .with_title("Operation Purge")
-            .with_fullscreen(Some(Fullscreen::Borderless(None)));
+    /// `windowed` replaces fullscreen with a fixed logical-size window.
+    pub fn create(
+        event_loop: &ActiveEventLoop,
+        vsync: bool,
+        windowed: Option<(u32, u32)>,
+    ) -> Result<Self, GlError> {
+        let window_attributes = WindowAttributes::default().with_title("Operation Purge");
+        let window_attributes = match windowed {
+            Some((w, h)) => window_attributes
+                .with_inner_size(winit::dpi::LogicalSize::new(w, h))
+                .with_resizable(false),
+            None => window_attributes.with_fullscreen(Some(Fullscreen::Borderless(None))),
+        };
 
         // No sRGB request; 24-bit depth; no MSAA.
         let template = ConfigTemplateBuilder::new()
@@ -138,6 +149,7 @@ impl RenderWindow {
             gl,
             physical_size: (width, height),
             scale_factor,
+            cursor_captured: false,
         })
     }
 
@@ -161,6 +173,35 @@ impl RenderWindow {
 
     pub fn set_scale_factor(&mut self, scale_factor: f64) {
         self.scale_factor = scale_factor;
+    }
+
+    /// Read back the back buffer (call before [`swap_buffers`](Self::swap_buffers))
+    /// and save it as a PNG. Used by the E2E driver.
+    pub fn capture_png(&self, path: &std::path::Path) -> Result<(), String> {
+        use glow::HasContext;
+        let (w, h) = self.physical_size;
+        let mut pixels = vec![0u8; (w * h * 4) as usize];
+        unsafe {
+            let gl = self.gl.context();
+            gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);
+            gl.read_pixels(
+                0,
+                0,
+                w as i32,
+                h as i32,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(Some(&mut pixels)),
+            );
+        }
+        let row = (w * 4) as usize;
+        let flipped: Vec<u8> = pixels.chunks_exact(row).rev().flatten().copied().collect();
+        let img = image::RgbaImage::from_raw(w, h, flipped).ok_or("bad capture size")?;
+        // Drop alpha: the framebuffer's alpha is not meaningful on screen.
+        image::DynamicImage::ImageRgba8(img)
+            .to_rgb8()
+            .save(path)
+            .map_err(|e| e.to_string())
     }
 
     /// Swaps buffers (render-then-swap; the original's present-previous-frame

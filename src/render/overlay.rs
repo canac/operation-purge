@@ -300,54 +300,65 @@ pub fn robot_marker_matrix(direction: f32, pos: Vec2) -> Mat4 {
     Mat4::rotation_z(direction).mul(&Mat4::translation(Vec3::new(pos.x, pos.y, 0.0)))
 }
 
-/// World matrix placing the centered health-bar quad for one segment: scale
-/// to the segment's `width` × [`HEALTH_BAR_HEIGHT`], then translate so it
-/// sits at `offset_x` within the bar, centered on the robot in X and just
-/// above its marker in Y (`Scale * Translate`, row-vector order).
-pub fn health_bar_segment_matrix(seg: &HealthSegment, robot_pos: Vec2, body_radius: f32) -> Mat4 {
-    let above = robot_pos.y + body_radius + HEALTH_BAR_HEIGHT;
-    Mat4::scaling(Vec3::new(seg.width, HEALTH_BAR_HEIGHT, 1.0)).mul(&Mat4::translation(Vec3::new(
-        robot_pos.x + seg.offset_x,
-        above,
-        0.0,
-    )))
+/// PARITY: `cOverlay2D::StartRender` visibility bounds — whole rooms fully
+/// inside the visible window (`ceil(offset)` .. `floor(offset + size)`,
+/// `cOverlay2D.cpp:103-106`); robots/centers outside are skipped.
+pub fn marker_visible(pos: Vec2, room_size: f32, vis_offset: Vec2, vis_size: Vec2) -> bool {
+    let lo = Vec2::new(vis_offset.x.ceil(), vis_offset.y.ceil());
+    let hi = Vec2::new((vis_offset.x + vis_size.x).floor(), (vis_offset.y + vis_size.y).floor());
+    let p = pos / room_size;
+    // `Between` accepts either bound order.
+    let between = |v: f32, a: f32, b: f32| (v >= a && v <= b) || (v >= b && v <= a);
+    between(p.x, lo.x, hi.x) && between(p.y, lo.y, hi.y)
 }
 
-/// The four map colors pulled from `[colors]` (`background_2d`, `wall_2d`,
-/// `barrel_2d`, `crosshair_2d`). The per-robot body color (team, or
-/// `observer_2d` for the active robot) travels on [`MapRobotData`].
+/// The map colors pulled from `[colors]` (`background_2d`, `wall_2d`,
+/// `barrel_2d`). The per-robot body color (team, or `observer_2d` for the
+/// active robot) travels on [`MapRobotData`].
 #[derive(Copy, Clone, Debug)]
 pub struct MapColors {
     pub background: Rgba,
     pub wall: Rgba,
     pub barrel: Rgba,
-    pub crosshair: Rgba,
 }
 
-/// Per-robot inputs for the 2D map: pose, health fraction, and the resolved
-/// body-marker color (team color, or the observer tint for the active robot).
+/// Per-robot inputs for the 2D map: pose and the resolved body-marker color
+/// (team color, or the observer tint for the active robot / observer point).
 #[derive(Copy, Clone, Debug)]
 pub struct MapRobotData {
     pub position: Vec2,
     pub direction: f32,
-    pub health_fraction: f32,
     pub marker_color: Rgba,
 }
 
-/// Owns the uploaded 2D-map meshes and draws the full-screen map or the
-/// in-game minimap with `prog_flat`. The map mesh is per-building (rebuilt
-/// when a new game starts); the marker / crosshair / health-bar meshes are
-/// static. Runtime-only (needs a current GL context).
+/// Per-center inputs for the 2D map (`cCenter::Render2D`).
+#[derive(Copy, Clone, Debug)]
+pub struct MapCenterData {
+    pub position: Vec2,
+    pub size: f32,
+    pub color: Rgba,
+}
+
+/// The visible map window in room units (`pt2VisibleBuildingOffset` /
+/// `size2VisibleBuilding`, `cOperationPurge.cpp:2733-2737`).
+#[derive(Copy, Clone, Debug)]
+pub struct MapView {
+    pub offset: Vec2,
+    pub size: Vec2,
+}
+
+/// Owns the uploaded 2D-map meshes and draws the full-screen map, the
+/// in-game minimap, and the 3D crosshair with `prog_flat`. The map mesh is
+/// per-building (rebuilt when a new game starts); the marker / crosshair /
+/// center meshes are static. Runtime-only (needs a current GL context).
 pub struct Overlay2DRenderer {
     map: Mesh<VertexPos>,
     map_wall_line_count: usize,
     map_background_start: usize,
     marker: Mesh<VertexPos>,
-    marker_dims: Robot2DDimensions,
     crosshair: Mesh<VertexPos>,
-    health_quad: Mesh<VertexPos>,
+    unit_quad: Mesh<VertexPos>,
     room_size: f32,
-    building_size: Vec2,
 }
 
 impl Overlay2DRenderer {
@@ -373,23 +384,20 @@ impl Overlay2DRenderer {
         )?;
         crosshair.upload(gl.clone())?;
 
-        let mut health_quad = Mesh::new(
+        let mut unit_quad = Mesh::new(
             health_bar_quad_vertices().to_vec(),
             health_bar_quad_indices().to_vec(),
         )?;
-        health_quad.upload(gl)?;
+        unit_quad.upload(gl)?;
 
-        let size = building.size();
         Ok(Self {
             map,
             map_wall_line_count: mm.wall_line_count,
             map_background_start: mm.background_start,
             marker,
-            marker_dims,
             crosshair,
-            health_quad,
+            unit_quad,
             room_size: building.room_size,
-            building_size: Vec2::new(size.x, size.y),
         })
     }
 
@@ -406,14 +414,16 @@ impl Overlay2DRenderer {
         }
     }
 
-    /// Draws the map: background quad, wall outline, each robot (body marker
-    /// in its resolved color, barrel in `barrel_2d`, green/red health bar),
-    /// and — for [`MapMode::Full2D`] only — the center crosshair.
+    /// PARITY: the building half of `Render2D` (`cOperationPurge.cpp:2762-2835`):
+    /// background (opaque in [`MapMode::Full2D`]), wall outline, centers,
+    /// then robot markers, each culled to the visible window.
     pub fn render_map(
         &self,
         gl_state: &mut GlState,
         programs: &Programs,
         mode: MapMode,
+        view: MapView,
+        centers: &[MapCenterData],
         robots: &[MapRobotData],
         colors: MapColors,
     ) {
@@ -422,41 +432,47 @@ impl Overlay2DRenderer {
         let prog = &programs.flat;
 
         let (screen_off, screen_size) = viewport(mode);
-        let vis_size = Vec2::new(
-            self.building_size.x / self.room_size,
-            self.building_size.y / self.room_size,
-        );
-        let world = map_world_matrix(self.room_size, Vec2::ZERO, vis_size, screen_off, screen_size);
+        let world = map_world_matrix(self.room_size, view.offset, view.size, screen_off, screen_size);
+        let visible = |p: Vec2| marker_visible(p, self.room_size, view.offset, view.size);
 
-        // Filled background, then the wall outline on top.
-        Self::set_flat(&gl, prog, &world, colors.background);
+        // D3D's identity-projection z=0 is the near plane; GL's is mid-depth,
+        // so drop scene depth to keep the map on top of the 3D view.
+        unsafe { gl.clear(glow::DEPTH_BUFFER_BIT) };
+
+        let mut background = colors.background;
+        if mode == MapMode::Full2D {
+            background.a = 1.0;
+        }
+        Self::set_flat(&gl, prog, &world, background);
         self.map.draw_range(self.map_background_start, 6);
         Self::set_flat(&gl, prog, &world, colors.wall);
         self.map.draw_lines_range(0, self.map_wall_line_count);
 
-        // Robot markers (body + barrel) and health bars.
-        for r in robots {
+        for c in centers.iter().filter(|c| visible(c.position)) {
+            let mvp = Mat4::scaling(Vec3::splat(c.size))
+                .mul(&Mat4::translation(Vec3::new(c.position.x, c.position.y, 0.0)))
+                .mul(&world);
+            Self::set_flat(&gl, prog, &mvp, c.color);
+            self.unit_quad.draw();
+        }
+
+        for r in robots.iter().filter(|r| visible(r.position)) {
             let marker_mvp = robot_marker_matrix(r.direction, r.position).mul(&world);
             Self::set_flat(&gl, prog, &marker_mvp, r.marker_color);
             self.marker.draw_range(0, 6); // body square
             Self::set_flat(&gl, prog, &marker_mvp, colors.barrel);
             self.marker.draw_range(6, 6); // barrel
-
-            for seg in health_bar_segments(r.health_fraction) {
-                let seg_mvp =
-                    health_bar_segment_matrix(&seg, r.position, self.marker_dims.body_radius)
-                        .mul(&world);
-                Self::set_flat(&gl, prog, &seg_mvp, seg.color);
-                self.health_quad.draw();
-            }
         }
+    }
 
-        // Center crosshair (identity MVP) — full-screen map only.
-        if mode == MapMode::Full2D {
-            let identity = Mat4::scaling(Vec3::ONE);
-            Self::set_flat(&gl, prog, &identity, colors.crosshair);
-            self.crosshair.draw_lines_range(0, 8);
-        }
+    /// PARITY: `cOverlay2D::RenderCrosshair` — screen-centered, 3D mode only.
+    pub fn render_crosshair(&self, gl_state: &mut GlState, programs: &Programs, color: Rgba) {
+        gl_state.set_winding(WindingDecision::CullNone);
+        let gl = Rc::clone(gl_state.context());
+        let identity = Mat4::scaling(Vec3::ONE);
+        unsafe { gl.clear(glow::DEPTH_BUFFER_BIT) };
+        Self::set_flat(&gl, &programs.flat, &identity, color);
+        self.crosshair.draw_lines_range(0, 8);
     }
 }
 
@@ -613,13 +629,10 @@ mod tests {
     }
 
     #[test]
-    fn health_bar_segment_matrix_sizes_and_lifts_above_the_robot() {
-        // Full health: green spans the whole bar (width 1, offset 0).
-        let [green, _red] = health_bar_segments(1.0);
-        let m = health_bar_segment_matrix(&green, Vec2::ZERO, 0.5);
-        // Local corner (0.5, 0.5) -> scale (1, 0.1) -> +(0, 0.5+0.1) above.
-        let out = m.mul_row_vec4([0.5, 0.5, 0.0, 1.0]);
-        assert!(equals(out[0], 0.5)); // 0.5 * width(1)
-        assert!(equals(out[1], 0.5 * HEALTH_BAR_HEIGHT + 0.6)); // 0.05 + above(0.6)
+    fn marker_visible_uses_whole_rooms_inside_the_window() {
+        let (off, size) = (Vec2::new(0.5, 0.0), Vec2::new(2.0, 2.0));
+        assert!(marker_visible(Vec2::new(10.0, 10.0), 10.0, off, size));
+        assert!(!marker_visible(Vec2::new(5.0, 10.0), 10.0, off, size));
+        assert!(!marker_visible(Vec2::new(25.0, 10.0), 10.0, off, size));
     }
 }
