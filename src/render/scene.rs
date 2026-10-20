@@ -123,14 +123,6 @@ pub fn frame_view(game: &Game) -> FrameView {
     }
 }
 
-fn team_color(game: &Game, team: crate::ids::TeamId) -> Rgba {
-    let def = &game.world.game_data.game_definitions[game.world.game_def.get() as usize];
-    def.teams
-        .get(team.get() as usize)
-        .map(|t| t.color)
-        .unwrap_or(Rgba::new(0.3, 0.5, 1.0, 1.0))
-}
-
 fn scene_3d(game: &Game) -> Scene3D {
     let world = &game.world;
     let data = &world.game_data;
@@ -149,7 +141,7 @@ fn scene_3d(game: &Game) -> Scene3D {
             position: Vec3::new(r.position.x, r.position.y, 0.0),
             direction: r.direction,
             barrel_elevation: r.barrel_elevation,
-            body_color: team_color(game, r.team),
+            body_color: game.world.team_color(r.team),
             barrel_color: data.colors.barrel_3d,
             tread_color: data.colors.tread_3d,
         })
@@ -161,7 +153,7 @@ fn scene_3d(game: &Game) -> Scene3D {
         .map(|c| CenterRenderData {
             position_x: c.position.x,
             position_y: c.position.y,
-            orientation: c.orientation_angle,
+            orientation: c.orientation.angle(),
             size: c.size,
             color: c.color,
         })
@@ -218,7 +210,7 @@ fn scene_3d(game: &Game) -> Scene3D {
             texture: SpriteTex::Projectile,
         });
     }
-    for p in world.particles.slots.iter().flatten() {
+    for p in world.particles.iter() {
         effects.push(SpriteData {
             center: p.position,
             offset: Vec3::ZERO,
@@ -257,7 +249,7 @@ fn map_robots(game: &Game) -> Vec<MapRobotData> {
             marker_color: if !point && game.active_robot == Some(*id) {
                 observer
             } else {
-                team_color(game, r.team)
+                game.world.team_color(r.team)
             },
         })
         .collect();

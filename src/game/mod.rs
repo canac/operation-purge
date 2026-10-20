@@ -884,7 +884,7 @@ impl Game {
 
     fn robot_hud(&self, id: RobotId) -> Option<RobotHudSnapshot> {
         let r = self.world.robots.get(&id)?;
-        let def = &self.world.game_data.game_definitions[self.world.game_def.get() as usize];
+        let def = self.world.game_definition();
         let rt = &self.world.game_data.robot_types[r.robot_type.get() as usize];
         let team_name = def
             .teams
@@ -927,7 +927,7 @@ impl Game {
     /// Assemble the live HUD snapshot the status block is rendered from,
     /// polling the current world/observer state.
     pub fn hud_snapshot(&self) -> HudSnapshot {
-        let def = &self.world.game_data.game_definitions[self.world.game_def.get() as usize];
+        let def = self.world.game_definition();
         let n_teams = def.teams.len();
         let mut spawned = vec![0u32; n_teams];
         for r in self.world.robots.values() {

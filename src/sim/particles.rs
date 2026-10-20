@@ -160,7 +160,7 @@ impl Particle {
 /// here a new particle takes the lowest free slot and ties go to the lowest
 /// index. Which particle is evicted otherwise matches.
 pub struct ParticleArena {
-    pub(crate) slots: Vec<Option<Particle>>,
+    slots: Vec<Option<Particle>>,
     live: usize,
     /// Every slot below this index is occupied.
     free_hint: usize,

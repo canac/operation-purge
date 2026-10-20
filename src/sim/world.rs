@@ -169,8 +169,15 @@ impl World {
         world
     }
 
-    fn game_definition(&self) -> &crate::data::GameDefinition {
+    /// The game definition this world was started with.
+    pub fn game_definition(&self) -> &crate::data::GameDefinition {
         &self.game_data.game_definitions[self.game_def.get() as usize]
+    }
+
+    /// `vTeamDefinitions [team].Color`; every robot's team is one the game
+    /// definition spawned.
+    pub fn team_color(&self, team: TeamId) -> crate::math::Rgba {
+        self.game_definition().teams[team.get() as usize].color
     }
 
     /// PARITY: `cOperationPurge::StartGame` (`cOperationPurge.cpp:153-306`).

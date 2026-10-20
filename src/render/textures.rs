@@ -142,7 +142,7 @@ impl Texture {
         match std::fs::read(path).ok().and_then(|b| decode_image(&b, mode).ok()) {
             Some(image) => Texture::upload(gl, &image),
             None => {
-                eprintln!("warning: texture {} unavailable, using white", path.display());
+                crate::log_error!("warning: texture {} unavailable, using white", path.display());
                 Texture::white(gl)
             }
         }
@@ -166,8 +166,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn texture_path(name: &str) -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/Textures")
+        crate::data::assets::AssetDirs::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets"))
+            .textures
             .join(name)
     }
 

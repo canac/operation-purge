@@ -65,7 +65,6 @@ pub struct Center {
     pub size: f32,
     pub color: Rgba,
     pub orientation: Orientation,
-    pub orientation_angle: f32,
 
     // --- transfer bookkeeping (ex-member state, `cCenter.h:53-58` +
     //     `cAmmoCenter` `cCenter.h:77-79`) ---
@@ -97,7 +96,6 @@ impl Center {
             size,
             color,
             orientation,
-            orientation_angle: orientation.angle(),
             transferring: false,
             transfer_robot: None,
             last_transfer_robot: None,
