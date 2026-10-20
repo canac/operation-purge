@@ -69,6 +69,8 @@ into the binary (same rationale as the hardcoded `Objects`/`LightData`).
 
 ## Controls
 
+New to the game? See [`PLAYING.md`](PLAYING.md) for a short player guide.
+
 Key bindings are **compiled in** (`COMMAND_BINDINGS` / `FIRE_COMMANDS` in
 `src/input/commands.rs`), transcribed from the original `GameData.xml`. They
 are positional against the fixed command ABI — the same enum order the 2011
@@ -87,7 +89,7 @@ build bound against (design §5, help-doc §1):
 | 2D map | Pan map right/down/left/up | `Right` / `Up` / `Left` / `Down` \* |
 | 2D map | Resize building (w/h ±) | `Ctrl`+arrows |
 | 3D | Back to the 2D map | `A` (`Enter2DMode`) |
-| 3D | Cancel back to 3D (if allowed) | `S` (`Exit2DMode`) |
+| 2D map | Cancel back to 3D (if allowed) | `S` (`Exit2DMode`) |
 | 3D | Accelerate / decelerate (no key = cruise) | `E` / `D` |
 | 3D | Turn / elevate barrel | mouse X / mouse Y |
 | 3D | Change desired speed | mouse wheel |
